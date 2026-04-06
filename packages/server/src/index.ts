@@ -10,6 +10,8 @@ import { healthRoutes } from "./routes/health";
 import { wsRoutes } from "./routes/ws";
 import { checkDependencies } from "./services/startup";
 import { reconcileTraefikConfigs, writeDefaultMiddlewares } from "./services/traefik";
+import { existsSync } from "fs";
+import { join } from "path";
 
 const PORT = Number(process.env.PORT) || 3456;
 const API_KEY = process.env.VOSS_API_KEY;
@@ -34,6 +36,9 @@ try {
   console.log("⚠ Traefik reconciliation skipped:", (err as Error).message);
 }
 
+// Dashboard static files path
+const DASH_DIR = join(import.meta.dir, "../../dashboard/dist");
+
 const app = new Elysia({
     serve: {
       maxRequestBodySize: 512 * 1024 * 1024, // 512MB
@@ -50,10 +55,11 @@ const app = new Elysia({
   .use(healthRoutes)
   .use(wsRoutes)
   .use(webhookRoutes)
-  // Auth middleware for API routes
+  // Auth middleware for API routes only
   .onBeforeHandle(({ headers, path }) => {
-    // Skip auth for public routes
-    if (path === "/api/health" || path.startsWith("/ws/")) return;
+    if (!path.startsWith("/api/")) return;
+    if (path === "/api/health") return;
+    if (path.startsWith("/api/webhook/")) return;
     const token = headers.authorization?.replace("Bearer ", "");
     if (token !== API_KEY) {
       return Response.json(
@@ -61,14 +67,41 @@ const app = new Elysia({
         { status: 401 }
       );
     }
-    // Return nothing = pass through
   })
   .use(projectRoutes)
   .use(deployRoutes)
   .use(envRoutes)
   .use(domainRoutes)
+  // Dashboard: serve static files from packages/dashboard/dist
+  .get("/assets/*", ({ params }) => {
+    const file = Bun.file(join(DASH_DIR, "assets", (params as any)["*"]));
+    return new Response(file);
+  })
+  .get("/favicon.svg", () => new Response(Bun.file(join(DASH_DIR, "favicon.svg"))))
+  .get("/*", ({ path }) => {
+    if (path.startsWith("/api/") || path.startsWith("/ws/")) return;
+
+    // Try exact file
+    const filePath = join(DASH_DIR, path);
+    if (path !== "/" && existsSync(filePath)) {
+      return new Response(Bun.file(filePath));
+    }
+
+    // SPA fallback
+    const indexPath = join(DASH_DIR, "index.html");
+    if (existsSync(indexPath)) {
+      return new Response(Bun.file(indexPath), {
+        headers: { "Content-Type": "text/html" },
+      });
+    }
+
+    return new Response("Dashboard not built. Run: cd packages/dashboard && bun run build", {
+      status: 404,
+    });
+  })
   .listen(PORT);
 
 console.log(`voss-server running on :${PORT}`);
+console.log(`Dashboard: http://localhost:${PORT}`);
 
 export type App = typeof app;

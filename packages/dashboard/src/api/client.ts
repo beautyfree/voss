@@ -1,5 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3456";
-const API_KEY = import.meta.env.VITE_API_KEY ?? "";
+const API_URL = import.meta.env.VITE_API_URL ?? "";
+const API_KEY = import.meta.env.VITE_API_KEY ?? localStorage.getItem("voss_api_key") ?? "";
 
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const resp = await fetch(`${API_URL}${path}`, {
