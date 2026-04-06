@@ -181,8 +181,9 @@ if ! command -v bun &> /dev/null; then
   curl -fsSL https://bun.sh/install | bash
   export BUN_INSTALL="$HOME/.bun"
   export PATH="$BUN_INSTALL/bin:$PATH"
-  # Also make it available system-wide
+  # Make bun + bunx available system-wide
   ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun 2>/dev/null || true
+  ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx 2>/dev/null || true
   echo "  ✓ Bun installed"
 else
   echo "  ✓ Bun already installed"
@@ -197,8 +198,10 @@ else
   echo "  Cloning voss-server..."
   git clone --quiet --depth 1 https://github.com/beautyfree/voss.git "$VOSS_DIR"
 fi
-cd "$VOSS_DIR" && bun install --production 2>/dev/null
-echo "  ✓ voss-server installed"
+cd "$VOSS_DIR" && bun install 2>/dev/null
+# Build dashboard
+cd "$VOSS_DIR/packages/dashboard" && bun run build 2>/dev/null
+echo "  ✓ voss-server + dashboard installed"
 
 # ── Create systemd service ──
 cat > /etc/systemd/system/voss-server.service << EOF
