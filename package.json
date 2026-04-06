@@ -1,0 +1,11 @@
+{
+  "name": "voss",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "test": "bun run --filter '*' test",
+    "dev:server": "bun run --filter @voss/server dev",
+    "dev:cli": "bun run --filter @voss/cli dev"
+  }
+}

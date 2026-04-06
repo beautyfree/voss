@@ -1,0 +1,21 @@
+{
+  "name": "@voss/server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile dist/voss-server",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "elysia": "^1.2",
+    "@elysiajs/cors": "^1.2",
+    "drizzle-orm": "^0.38",
+    "@voss/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30"
+  }
+}
