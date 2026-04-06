@@ -186,11 +186,21 @@ export default async function deploy(args: string[]) {
       };
     });
 
-    // Success
-    const domain = config.name; // TODO: show real domain if configured
+    // Success — fetch real domain if configured
+    let deployUrl = `https://${config.name}`;
+    try {
+      const domainsResp = await api(creds, `/api/projects/${config.name}/domains`);
+      if (domainsResp.ok) {
+        const { data: domainList } = await domainsResp.json() as any;
+        if (domainList?.length > 0) {
+          deployUrl = `https://${domainList[0].hostname}`;
+        }
+      }
+    } catch {}
+
     console.log(`  ${icon.success} Health check passed ${elapsed(deployStart)}`);
     console.log();
-    console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(`https://${domain}`)}`);
+    console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(deployUrl)}`);
     console.log();
   } catch (err) {
     const msg = (err as Error).message;
@@ -219,9 +229,17 @@ export default async function deploy(args: string[]) {
           if (d.status === "health_checking") pollSpinner.update("Health check...");
           if (d.status === "live") {
             pollSpinner.stop();
+            let pollUrl = `https://${config.name}`;
+            try {
+              const dr = await api(creds, `/api/projects/${config.name}/domains`);
+              if (dr.ok) {
+                const { data: dl } = await dr.json() as any;
+                if (dl?.length > 0) pollUrl = `https://${dl[0].hostname}`;
+              }
+            } catch {}
             console.log(`  ${icon.success} Health check passed ${elapsed(deployStart)}`);
             console.log();
-            console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(`https://${config.name}`)}`);
+            console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(pollUrl)}`);
             console.log();
             return;
           }
