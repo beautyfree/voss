@@ -5,6 +5,7 @@ import { projectRoutes } from "./routes/projects";
 import { deployRoutes } from "./routes/deploy";
 import { envRoutes } from "./routes/env";
 import { domainRoutes } from "./routes/domains";
+import { webhookRoutes } from "./routes/webhook";
 import { healthRoutes } from "./routes/health";
 import { wsRoutes } from "./routes/ws";
 import { checkDependencies } from "./services/startup";
@@ -48,6 +49,7 @@ const app = new Elysia({
   // Public routes (no auth)
   .use(healthRoutes)
   .use(wsRoutes)
+  .use(webhookRoutes)
   // Auth middleware for API routes
   .onBeforeHandle(({ headers, path }) => {
     // Skip auth for public routes
