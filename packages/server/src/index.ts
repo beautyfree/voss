@@ -39,6 +39,23 @@ try {
 // Dashboard static files path
 const DASH_DIR = join(import.meta.dir, "../../dashboard/dist");
 
+const MIME_TYPES: Record<string, string> = {
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".html": "text/html",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".json": "application/json",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+};
+
+function getMime(path: string): string {
+  const ext = path.substring(path.lastIndexOf("."));
+  return MIME_TYPES[ext] ?? "application/octet-stream";
+}
+
 const app = new Elysia({
     serve: {
       maxRequestBodySize: 512 * 1024 * 1024, // 512MB
@@ -74,17 +91,24 @@ const app = new Elysia({
   .use(domainRoutes)
   // Dashboard: serve static files from packages/dashboard/dist
   .get("/assets/*", ({ params }) => {
-    const file = Bun.file(join(DASH_DIR, "assets", (params as any)["*"]));
-    return new Response(file);
+    const fileName = (params as any)["*"];
+    const file = Bun.file(join(DASH_DIR, "assets", fileName));
+    return new Response(file, {
+      headers: { "Content-Type": getMime(fileName) },
+    });
   })
-  .get("/favicon.svg", () => new Response(Bun.file(join(DASH_DIR, "favicon.svg"))))
+  .get("/favicon.svg", () => new Response(Bun.file(join(DASH_DIR, "favicon.svg")), {
+    headers: { "Content-Type": "image/svg+xml" },
+  }))
   .get("/*", ({ path }) => {
     if (path.startsWith("/api/") || path.startsWith("/ws/")) return;
 
     // Try exact file
     const filePath = join(DASH_DIR, path);
     if (path !== "/" && existsSync(filePath)) {
-      return new Response(Bun.file(filePath));
+      return new Response(Bun.file(filePath), {
+        headers: { "Content-Type": getMime(path) },
+      });
     }
 
     // SPA fallback
