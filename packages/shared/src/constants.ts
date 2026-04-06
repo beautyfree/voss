@@ -76,6 +76,13 @@ export const RUNNERS: Record<FrameworkId, RunnerConfig> = {
     port: 3000,
     detectFiles: ["index.html"],
   },
+  dockerfile: {
+    image: "", // built from Dockerfile
+    buildCommand: "",
+    startCommand: "",
+    port: 3000,
+    detectFiles: ["Dockerfile"],
+  },
   unknown: {
     image: "node:20-slim",
     buildCommand: "npm install",
@@ -87,6 +94,7 @@ export const RUNNERS: Record<FrameworkId, RunnerConfig> = {
 
 // Detection priority: first match wins
 export const DETECTION_ORDER: FrameworkId[] = [
+  "dockerfile",
   "nextjs",
   "astro",
   "remix",

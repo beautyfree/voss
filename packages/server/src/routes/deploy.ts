@@ -19,6 +19,8 @@ import { createHash } from "crypto";
 import { readdir, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { logEvent } from "../services/events";
+import { notifyDeploy } from "../services/notify";
+import { postPreviewComment } from "../services/github";
 
 // ── WebSocket log subscribers ──
 const logSubscribers = new Map<string, Set<(msg: string) => void>>();
@@ -407,6 +409,7 @@ export async function deployInBackground(
   envVars: Record<string, string>,
   isPreview: boolean = false,
   branchName: string = "main",
+  prNumber?: number,
 ) {
   const db = getDb();
   const framework = config.framework ?? "unknown";
@@ -563,10 +566,19 @@ export async function deployInBackground(
       .set({ finishedAt: new Date().toISOString() })
       .where(eq(schema.deployments.id, deploymentId))
       .run();
+    const deployUrl = `https://${isPreview ? aliasSubdomain : projectName}.${process.env.VOSS_DOMAIN ?? "yourdomain.com"}`;
     logEvent(projectId, "deploy", `Deployed ${projectName} (${framework}) — ${isPreview ? "preview" : "production"}`, { deploymentId, branch: branchName });
+    notifyDeploy(projectId, "live", { projectName, deploymentId, branch: branchName, url: deployUrl });
+    if (isPreview && prNumber) {
+      postPreviewComment(projectId, prNumber, deployUrl, deploymentId, "live");
+    }
   } catch (err) {
     updateStatus(deploymentId, "failed");
     logEvent(projectId, "deploy_failed", `Deploy failed: ${(err as Error).message}`, { deploymentId });
+    notifyDeploy(projectId, "failed", { projectName, deploymentId, branch: branchName });
+    if (isPreview && prNumber) {
+      postPreviewComment(projectId, prNumber, "", deploymentId, "failed");
+    }
     console.error(`Deploy ${deploymentId} failed:`, err);
   } finally {
     releaseBuildSlot();

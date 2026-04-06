@@ -88,6 +88,7 @@ function migrate(sqlite: Database) {
   // Migrations for existing DBs
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN repo_url TEXT"); } catch {}
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN cache_hash TEXT"); } catch {}
+  try { sqlite.exec("ALTER TABLE projects ADD COLUMN notify_url TEXT"); } catch {}
 }
 
 // Reset for testing

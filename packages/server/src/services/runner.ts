@@ -38,6 +38,11 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
   // Ensure log directory exists
   await $`mkdir -p ${VOSS_LOG_DIR}/${opts.projectName}`;
 
+  // Dockerfile mode: build image from project's Dockerfile
+  if (opts.framework === "dockerfile") {
+    return runDockerfileContainer(opts, containerName);
+  }
+
   // Pull image if not cached
   try {
     await $`docker image inspect ${runner.image}`.quiet();
@@ -109,6 +114,39 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
   const containerId = result.trim();
 
   return { containerId, containerName };
+}
+
+/**
+ * Build and run from a Dockerfile in the project.
+ */
+async function runDockerfileContainer(opts: RunContainerOpts, containerName: string): Promise<RunResult> {
+  const imageName = `voss-img-${opts.projectName}:${opts.deploymentId.slice(0, 8)}`;
+
+  // Build image
+  await $`docker build -t ${imageName} ${opts.uploadDir}`;
+
+  // Env vars as -e flags
+  const envFlags = Object.entries(opts.envVars).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  const memoryLimit = opts.config.resources?.memory ?? "1536m";
+  const cpuLimit = opts.config.resources?.cpu ?? 1;
+
+  const labels = [
+    `--label=voss.project=${opts.projectName}`,
+    `--label=voss.deployment=${opts.deploymentId}`,
+  ];
+
+  const result = await $`docker run -d \
+    --name ${containerName} \
+    --network ${DOCKER_NETWORK_RUNNER} \
+    --restart unless-stopped \
+    --memory ${memoryLimit} \
+    --cpus ${String(cpuLimit)} \
+    --stop-timeout 30 \
+    ${envFlags} \
+    ${labels} \
+    ${imageName}`.text();
+
+  return { containerId: result.trim(), containerName };
 }
 
 /**

@@ -14,6 +14,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   projects: () => import("./commands/projects").then((m) => m.default(args.slice(1))),
   init: () => import("./commands/init").then((m) => m.default(args.slice(1))),
   domains: () => import("./commands/domains").then((m) => m.default(args.slice(1))),
+  link: () => import("./commands/link").then((m) => m.default(args.slice(1))),
 };
 
 if (!command || command === "--help" || command === "-h") {
@@ -34,6 +35,7 @@ if (!command || command === "--help" || command === "-h") {
     voss domains add <hostname>        Add custom domain
     voss domains remove <hostname>     Remove custom domain
     voss domains                       List domains
+    voss link [repo-url]               Link GitHub repo for auto-deploy
 
   Options:
     --help, -h                         Show this help

@@ -7,6 +7,7 @@ export const projects = sqliteTable("projects", {
   serverId: text("server_id").notNull().default("local"),
   domain: text("domain"),
   repoUrl: text("repo_url"),
+  notifyUrl: text("notify_url"), // Slack/Telegram/Discord webhook URL
   createdAt: text("created_at").notNull().default(""),
   updatedAt: text("updated_at").notNull().default(""),
 });

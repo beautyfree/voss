@@ -299,7 +299,7 @@ async function handlePullRequest(payload: any) {
       })
       .run();
 
-    deployInBackground(deploymentId, project.name, project.id, config, envMap, true, branch);
+    deployInBackground(deploymentId, project.name, project.id, config, envMap, true, branch, prNumber);
 
     return {
       data: {

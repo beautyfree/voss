@@ -50,6 +50,7 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
 
     const updates: Record<string, any> = {};
     if (body.repoUrl !== undefined) updates.repoUrl = body.repoUrl;
+    if (body.notifyUrl !== undefined) updates.notifyUrl = body.notifyUrl;
     if (Object.keys(updates).length > 0) {
       updates.updatedAt = new Date().toISOString();
       db.update(schema.projects)
@@ -62,6 +63,7 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
   }, {
     body: t.Object({
       repoUrl: t.Optional(t.String()),
+      notifyUrl: t.Optional(t.String()),
     }),
   })
   .delete("/:name", ({ params }) => {

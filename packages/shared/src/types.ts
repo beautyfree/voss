@@ -130,6 +130,7 @@ export type FrameworkId =
   | "static"
   | "bun"
   | "node"
+  | "dockerfile"
   | "unknown";
 
 // ── Deploy protocol ──
