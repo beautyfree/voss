@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { updateTraefikConfig } from "../services/traefik";
@@ -28,11 +28,7 @@ export const domainRoutes = new Elysia({ prefix: "/api/projects/:name/domains" }
 
   .post("/", async ({ params, body }) => {
     const db = getDb();
-    const { hostname } = body as { hostname: string };
-
-    if (!hostname || typeof hostname !== "string") {
-      return Response.json({ code: "INVALID_CONFIG", message: "hostname is required" }, { status: 400 });
-    }
+    const { hostname } = body;
 
     const project = db
       .select()
@@ -110,6 +106,10 @@ export const domainRoutes = new Elysia({ prefix: "/api/projects/:name/domains" }
         dnsInstruction: `Set DNS A record: ${hostname} → ${serverIp}`,
       },
     };
+  }, {
+    body: t.Object({
+      hostname: t.String(),
+    }),
   })
 
   .delete("/:hostname", async ({ params }) => {

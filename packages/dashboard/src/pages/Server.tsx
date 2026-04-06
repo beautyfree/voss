@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { client } from "../api/client";
 
 export function Server() {
   const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api("/api/health")
-      .then(setHealth)
+    client.api.health.get()
+      .then((res) => { if (res.data) setHealth(res.data); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

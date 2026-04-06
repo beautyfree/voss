@@ -48,21 +48,26 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
       );
     }
 
-    const { key, value, isBuildTime } = body as { key: string; value: string; isBuildTime?: boolean };
     const id = crypto.randomUUID();
 
     // Upsert: delete existing key first
     db.delete(schema.envVars)
       .where(
-        and(eq(schema.envVars.projectId, project.id), eq(schema.envVars.key, key))
+        and(eq(schema.envVars.projectId, project.id), eq(schema.envVars.key, body.key))
       )
       .run();
 
     db.insert(schema.envVars)
-      .values({ id, projectId: project.id, key, value, isBuildTime: isBuildTime ?? false })
+      .values({ id, projectId: project.id, key: body.key, value: body.value, isBuildTime: body.isBuildTime ?? false })
       .run();
 
-    return { data: { key, set: true } };
+    return { data: { key: body.key, set: true } };
+  }, {
+    body: t.Object({
+      key: t.String(),
+      value: t.String(),
+      isBuildTime: t.Optional(t.Boolean()),
+    }),
   })
   .delete("/:key", ({ params }) => {
     const db = getDb();

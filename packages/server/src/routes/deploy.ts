@@ -61,11 +61,7 @@ function releaseBuildSlot() {
 export const deployRoutes = new Elysia({ prefix: "/api" })
   // Upload file manifest (SHA dedup step 1)
   .post("/deploy/manifest", async ({ body }) => {
-    const { projectName, files, framework } = body as {
-      projectName: string;
-      files: Record<string, string>;
-      framework?: string;
-    };
+    const { projectName, files, framework } = body;
 
     // Check which files we already have
     const uploadDir = `${VOSS_UPLOADS_DIR}/${projectName}`;
@@ -79,6 +75,12 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
     }
 
     return { data: { missing, uploadDir } };
+  }, {
+    body: t.Object({
+      projectName: t.String(),
+      files: t.Record(t.String(), t.String()),
+      framework: t.Optional(t.String()),
+    }),
   })
 
   // Upload files (SHA dedup step 2 — tar of changed files)
@@ -104,12 +106,7 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
 
   // Trigger deploy
   .post("/deploy/start", async ({ body }) => {
-    const { projectName, config: rawConfig, preview, branch } = body as {
-      projectName: string;
-      config: VossConfig;
-      preview?: boolean;
-      branch?: string;
-    };
+    const { projectName, config: rawConfig, preview, branch } = body;
 
     const db = getDb();
     const config = parseConfig(rawConfig);
@@ -182,6 +179,13 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
         status: "queued" as DeploymentStatus,
       },
     };
+  }, {
+    body: t.Object({
+      projectName: t.String(),
+      config: t.Any(),
+      preview: t.Optional(t.Boolean()),
+      branch: t.Optional(t.String()),
+    }),
   })
 
   // Get deployment logs (saved file)

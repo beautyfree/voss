@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../api/client";
+import { client } from "../api/client";
 import { StatusBadge } from "../components/StatusDot";
 
 interface Deployment {
@@ -68,22 +68,21 @@ export function ProjectDetail() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     if (!name) return;
-    Promise.all([
-      api<ProjectData>(`/api/projects/${name}`),
-      api<Deployment[]>(`/api/projects/${name}/deployments`),
-      api<Domain[]>(`/api/projects/${name}/domains`),
-      api<EnvVar[]>(`/api/projects/${name}/env/`),
-    ])
-      .then(([p, d, dm, ev]) => {
-        setProject(p);
-        setDeploys(d);
-        setDomains(dm);
-        setEnvVars(ev);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    try {
+      const [pRes, dRes, dmRes, evRes] = await Promise.all([
+        client.api.projects({ name }).get(),
+        client.api.projects({ name }).deployments.get(),
+        client.api.projects({ name }).domains.index.get(),
+        client.api.projects({ name }).env.index.get(),
+      ]);
+      if (pRes.data?.data) setProject(pRes.data.data as any);
+      if (dRes.data?.data) setDeploys(dRes.data.data as any);
+      if (dmRes.data?.data) setDomains(dmRes.data.data as any);
+      if (evRes.data?.data) setEnvVars(evRes.data.data as any);
+    } catch {}
+    setLoading(false);
   }, [name]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -140,16 +139,16 @@ export function ProjectDetail() {
     if (!name || !newKey.trim()) return;
     setEnvSaving(true);
     try {
-      await api(`/api/projects/${name}/env/`, {
-        method: "POST",
-        body: JSON.stringify({ key: newKey.trim(), value: newValue, isBuildTime: newIsBuild }),
+      await client.api.projects({ name }).env.index.post({
+        key: newKey.trim(),
+        value: newValue,
+        isBuildTime: newIsBuild,
       });
       setNewKey("");
       setNewValue("");
       setNewIsBuild(false);
-      // Refresh env vars
-      const ev = await api<EnvVar[]>(`/api/projects/${name}/env/`);
-      setEnvVars(ev);
+      const res = await client.api.projects({ name }).env.index.get();
+      if (res.data?.data) setEnvVars(res.data.data as any);
     } catch {}
     setEnvSaving(false);
   }
@@ -157,7 +156,7 @@ export function ProjectDetail() {
   async function deleteEnvVar(key: string) {
     if (!name) return;
     try {
-      await api(`/api/projects/${name}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
+      await client.api.projects({ name }).env({ key }).delete();
       setEnvVars((prev) => prev.filter((v) => v.key !== key));
     } catch {}
   }
@@ -166,13 +165,12 @@ export function ProjectDetail() {
     if (!name || !newDomain.trim()) return;
     setDomainSaving(true);
     try {
-      await api(`/api/projects/${name}/domains/`, {
-        method: "POST",
-        body: JSON.stringify({ hostname: newDomain.trim().toLowerCase() }),
+      await client.api.projects({ name }).domains.index.post({
+        hostname: newDomain.trim().toLowerCase(),
       });
       setNewDomain("");
-      const dm = await api<Domain[]>(`/api/projects/${name}/domains`);
-      setDomains(dm);
+      const res = await client.api.projects({ name }).domains.index.get();
+      if (res.data?.data) setDomains(res.data.data as any);
     } catch {}
     setDomainSaving(false);
   }
@@ -180,7 +178,7 @@ export function ProjectDetail() {
   async function deleteDomain(hostname: string) {
     if (!name) return;
     try {
-      await api(`/api/projects/${name}/domains/${encodeURIComponent(hostname)}`, { method: "DELETE" });
+      await client.api.projects({ name }).domains({ hostname }).delete();
       setDomains((prev) => prev.filter((d) => d.hostname !== hostname));
     } catch {}
   }
@@ -191,8 +189,9 @@ export function ProjectDetail() {
     setLogStatus(null);
     wsRef.current?.close();
     try {
-      const data = await api<string[]>(`/api/deployments/${deploymentId}/logs`);
-      setLogs(data);
+      const res = await client.api.deployments({ id: deploymentId }).logs.get();
+      if (res.data?.data) setLogs(res.data.data as any);
+      else setLogs(["[no logs available]"]);
     } catch {
       setLogs(["[no logs available]"]);
     }
@@ -210,13 +209,12 @@ export function ProjectDetail() {
     if (!name || redeploying) return;
     setRedeploying(true);
     try {
-      const result = await api<{ deploymentId: string }>(`/api/projects/${name}/redeploy`, {
-        method: "POST",
-      });
-      // Switch to deployments tab and connect logs
-      setTab("deployments");
-      loadData();
-      connectLogs(result.deploymentId);
+      const res = await client.api.projects({ name }).redeploy.post();
+      if (res.data?.data) {
+        setTab("deployments");
+        loadData();
+        connectLogs((res.data.data as any).deploymentId);
+      }
     } catch {}
     setRedeploying(false);
   }

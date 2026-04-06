@@ -9,16 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@voss/shared": "workspace:*",
     "react": "^19",
     "react-dom": "^19",
-    "react-router-dom": "^7",
-    "@voss/shared": "workspace:*"
+    "react-router-dom": "^7"
   },
   "devDependencies": {
+    "@elysiajs/eden": "^1.4.9",
+    "@voss/server": "workspace:*",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
-    "vite": "^6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^6"
   }
 }
