@@ -1,6 +1,10 @@
 import { Elysia, t } from "elysia";
 import { eq, desc } from "drizzle-orm";
 import { getDb, schema } from "../db";
+import { stopContainer } from "../services/runner";
+import { removeTraefikConfig } from "../services/traefik";
+import { VOSS_LOG_DIR, VOSS_UPLOADS_DIR, VOSS_DATA_DIR } from "@voss/shared";
+import { $ } from "bun";
 
 export const projectRoutes = new Elysia({ prefix: "/api/projects" })
   .get("/", () => {
@@ -66,7 +70,7 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
       notifyUrl: t.Optional(t.String()),
     }),
   })
-  .delete("/:name", ({ params }) => {
+  .delete("/:name", async ({ params }) => {
     const db = getDb();
     const project = db
       .select()
@@ -81,6 +85,35 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
       );
     }
 
+    // Stop all containers for this project
+    const deploys = db.select().from(schema.deployments)
+      .where(eq(schema.deployments.projectId, project.id)).all();
+    for (const d of deploys) {
+      if (d.containerName) {
+        try { await stopContainer(d.containerName); } catch {}
+      }
+    }
+
+    // Remove Traefik configs
+    const aliases = db.select().from(schema.aliases)
+      .where(eq(schema.aliases.projectId, project.id)).all();
+    for (const a of aliases) {
+      try { await removeTraefikConfig(a.subdomain); } catch {}
+    }
+    try { await removeTraefikConfig(project.name); } catch {}
+
+    // Delete files: logs, uploads, cache
+    try { await $`rm -rf ${VOSS_LOG_DIR}/${project.name}`.quiet(); } catch {}
+    try { await $`rm -rf ${VOSS_UPLOADS_DIR}/${project.name}`.quiet(); } catch {}
+    try { await $`rm -rf ${VOSS_DATA_DIR}/cache/${project.name}`.quiet(); } catch {}
+
+    // Clean DB (order matters for foreign keys)
+    db.delete(schema.events).where(eq(schema.events.projectId, project.id)).run();
+    db.delete(schema.envVars).where(eq(schema.envVars.projectId, project.id)).run();
+    db.delete(schema.domains).where(eq(schema.domains.projectId, project.id)).run();
+    db.delete(schema.aliases).where(eq(schema.aliases.projectId, project.id)).run();
+    db.delete(schema.deployments).where(eq(schema.deployments.projectId, project.id)).run();
     db.delete(schema.projects).where(eq(schema.projects.id, project.id)).run();
-    return { data: { deleted: true } };
+
+    return { data: { deleted: true, cleaned: { containers: deploys.length, aliases: aliases.length } } };
   });
