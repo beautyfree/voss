@@ -8,9 +8,18 @@ import { bold, cyan, dim, green, red, yellow, icon, elapsed, Spinner, kv } from 
 
 export default async function deploy(args: string[]) {
   const verbose = args.includes("--verbose") || args.includes("-v");
+  const isPreview = args.includes("--preview") || args.includes("-p");
   const creds = requireCredentials();
   const projectDir = process.cwd();
   const deployStart = Date.now();
+
+  // Detect current git branch
+  let branch = "main";
+  try {
+    const proc = Bun.spawnSync(["git", "branch", "--show-current"], { cwd: projectDir });
+    const b = proc.stdout.toString().trim();
+    if (b) branch = b;
+  } catch {}
 
   // 1. Load or detect config
   const config = await loadConfig(projectDir);
@@ -19,7 +28,8 @@ export default async function deploy(args: string[]) {
   const runner = RUNNERS[framework];
 
   console.log();
-  console.log(`  Detected: ${cyan(framework)} ${dim(`(${runner.detectFiles[0] ?? "package.json"})`)}`);
+  const previewLabel = isPreview ? ` ${yellow(`[preview: ${branch}]`)}` : "";
+  console.log(`  Detected: ${cyan(framework)} ${dim(`(${runner.detectFiles[0] ?? "package.json"})`)}${previewLabel}`);
 
   // 2. Hash files for dedup
   const spinner = new Spinner("Hashing files...");
@@ -110,7 +120,7 @@ export default async function deploy(args: string[]) {
   let buildSpinner = new Spinner("Building...");
   const deployResp = await api(creds, "/api/deploy/start", {
     method: "POST",
-    body: JSON.stringify({ projectName: config.name, config }),
+    body: JSON.stringify({ projectName: config.name, config, preview: isPreview, branch }),
   });
 
   const deployResult = await deployResp.json() as any;

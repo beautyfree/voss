@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { runContainer, healthCheck, stopContainer, streamLogs } from "../services/runner";
 import {
@@ -104,9 +104,11 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
 
   // Trigger deploy
   .post("/deploy/start", async ({ body }) => {
-    const { projectName, config: rawConfig } = body as {
+    const { projectName, config: rawConfig, preview, branch } = body as {
       projectName: string;
       config: VossConfig;
+      preview?: boolean;
+      branch?: string;
     };
 
     const db = getDb();
@@ -150,12 +152,15 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
     }
 
     // Create deployment record
+    const isPreview = preview ?? false;
+    const branchName = branch ?? "main";
     const logPath = `${VOSS_LOG_DIR}/${projectName}/${deploymentId}.log`;
     db.insert(schema.deployments)
       .values({
         id: deploymentId,
         projectId: project.id,
         status: "queued",
+        branch: branchName,
         runnerImage: runner.image,
         buildCommand: config.buildCommand ?? runner.buildCommand,
         startCommand: config.startCommand ?? runner.startCommand,
@@ -167,7 +172,7 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
       .run();
 
     // Run deploy in background
-    deployInBackground(deploymentId, projectName, project.id, config, envMap);
+    deployInBackground(deploymentId, projectName, project.id, config, envMap, isPreview, branchName);
 
     return {
       data: {
@@ -290,6 +295,8 @@ async function deployInBackground(
   projectId: string,
   config: VossConfig,
   envVars: Record<string, string>,
+  isPreview: boolean = false,
+  branchName: string = "main",
 ) {
   const db = getDb();
   const framework = config.framework ?? "unknown";
@@ -343,46 +350,82 @@ async function deployInBackground(
 
     broadcastLog(deploymentId, "Health check: ● passed");
 
-    // Success — update alias
-    const existingAlias = db
-      .select()
-      .from(schema.aliases)
-      .where(eq(schema.aliases.projectId, projectId))
-      .get();
+    // Success — update alias (production or preview)
+    const aliasType = isPreview ? "preview" : "production";
+    const aliasSubdomain = isPreview
+      ? `${branchName.replace(/[^a-z0-9-]/gi, "-")}-${projectName}`
+      : projectName;
 
-    if (existingAlias) {
-      // Stop old container after drain period (30s)
-      const oldDeployment = db
+    if (isPreview) {
+      // Preview: create new alias, don't touch production
+      const existingPreview = db
         .select()
-        .from(schema.deployments)
-        .where(eq(schema.deployments.id, existingAlias.deploymentId))
+        .from(schema.aliases)
+        .where(
+          and(
+            eq(schema.aliases.projectId, projectId),
+            eq(schema.aliases.subdomain, aliasSubdomain)
+          )
+        )
         .get();
 
-      db.update(schema.aliases)
-        .set({
-          deploymentId,
-          previousDeploymentId: existingAlias.deploymentId,
-        })
-        .where(eq(schema.aliases.id, existingAlias.id))
-        .run();
-
-      // Drain + stop old container
-      if (oldDeployment?.containerName) {
-        setTimeout(async () => {
-          await stopContainer(oldDeployment.containerName!);
-        }, 30_000);
+      if (existingPreview) {
+        const oldDeploy = db.select().from(schema.deployments)
+          .where(eq(schema.deployments.id, existingPreview.deploymentId)).get();
+        db.update(schema.aliases)
+          .set({ deploymentId, previousDeploymentId: existingPreview.deploymentId })
+          .where(eq(schema.aliases.id, existingPreview.id))
+          .run();
+        if (oldDeploy?.containerName) {
+          setTimeout(() => stopContainer(oldDeploy.containerName!), 30_000);
+        }
+      } else {
+        db.insert(schema.aliases)
+          .values({
+            id: crypto.randomUUID(),
+            projectId,
+            subdomain: aliasSubdomain,
+            deploymentId,
+            previousDeploymentId: null,
+            type: "preview",
+          })
+          .run();
       }
     } else {
-      db.insert(schema.aliases)
-        .values({
-          id: crypto.randomUUID(),
-          projectId,
-          subdomain: projectName,
-          deploymentId,
-          previousDeploymentId: null,
-          type: "production",
-        })
-        .run();
+      // Production: swap alias
+      const existingAlias = db
+        .select()
+        .from(schema.aliases)
+        .where(
+          and(
+            eq(schema.aliases.projectId, projectId),
+            eq(schema.aliases.type, "production")
+          )
+        )
+        .get();
+
+      if (existingAlias) {
+        const oldDeployment = db.select().from(schema.deployments)
+          .where(eq(schema.deployments.id, existingAlias.deploymentId)).get();
+        db.update(schema.aliases)
+          .set({ deploymentId, previousDeploymentId: existingAlias.deploymentId })
+          .where(eq(schema.aliases.id, existingAlias.id))
+          .run();
+        if (oldDeployment?.containerName) {
+          setTimeout(() => stopContainer(oldDeployment.containerName!), 30_000);
+        }
+      } else {
+        db.insert(schema.aliases)
+          .values({
+            id: crypto.randomUUID(),
+            projectId,
+            subdomain: projectName,
+            deploymentId,
+            previousDeploymentId: null,
+            type: "production",
+          })
+          .run();
+      }
     }
 
     // Update Traefik routing
@@ -392,11 +435,16 @@ async function deployInBackground(
       .where(eq(schema.domains.projectId, projectId))
       .all();
 
+    // For preview: add preview subdomain as a domain
+    const previewDomain = isPreview
+      ? [`${aliasSubdomain}.${process.env.VOSS_DOMAIN ?? "localhost"}`]
+      : [];
+
     await updateTraefikConfig({
-      projectName,
+      projectName: isPreview ? aliasSubdomain : projectName,
       containerName,
       port: RUNNERS[framework].port,
-      domains: projectDomains.map((d) => d.hostname),
+      domains: [...projectDomains.map((d) => d.hostname), ...previewDomain],
     });
 
     broadcastLog(deploymentId, `✓ https://${projectName}.${process.env.VOSS_DOMAIN ?? "yourdomain.com"}`);
