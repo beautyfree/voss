@@ -74,7 +74,20 @@ function migrate(sqlite: Database) {
       ssl_status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      meta TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT ''
+    );
   `);
+
+  // Migrations for existing DBs
+  try { sqlite.exec("ALTER TABLE projects ADD COLUMN repo_url TEXT"); } catch {}
+  try { sqlite.exec("ALTER TABLE projects ADD COLUMN cache_hash TEXT"); } catch {}
 }
 
 // Reset for testing

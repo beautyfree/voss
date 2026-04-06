@@ -71,8 +71,10 @@ async function handlePush(payload: any) {
   const db = getDb();
   const projects = db.select().from(schema.projects).all();
 
-  // Match by project name (TODO: add repo_url field for proper matching)
+  // Match by repoUrl first, fallback to project name
+  const repoUrl = `https://github.com/${repoFullName}`;
   const project = projects.find((p) => {
+    if (p.repoUrl) return p.repoUrl === repoUrl || p.repoUrl === repoFullName;
     const repoName = repoFullName.split("/").pop();
     return p.name === repoName;
   });
@@ -169,7 +171,9 @@ async function handlePullRequest(payload: any) {
 
   const db = getDb();
   const projects = db.select().from(schema.projects).all();
+  const prRepoUrl = `https://github.com/${repoFullName}`;
   const project = projects.find((p) => {
+    if (p.repoUrl) return p.repoUrl === prRepoUrl || p.repoUrl === repoFullName;
     const repoName = repoFullName.split("/").pop();
     return p.name === repoName;
   });

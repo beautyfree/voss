@@ -18,6 +18,7 @@ import { updateTraefikConfig } from "../services/traefik";
 import { createHash } from "crypto";
 import { readdir, mkdir } from "fs/promises";
 import { existsSync } from "fs";
+import { logEvent } from "../services/events";
 
 // ── WebSocket log subscribers ──
 const logSubscribers = new Map<string, Set<(msg: string) => void>>();
@@ -391,6 +392,7 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
       .run();
 
     // TODO: regenerate Traefik config to point to rolled-back container
+    logEvent(project.id, "rollback", `Rolled back ${project.name}`, { from: oldDeploymentId, to: alias.previousDeploymentId });
 
     return { data: { rolledBackTo: alias.previousDeploymentId } };
   });
@@ -561,8 +563,10 @@ export async function deployInBackground(
       .set({ finishedAt: new Date().toISOString() })
       .where(eq(schema.deployments.id, deploymentId))
       .run();
+    logEvent(projectId, "deploy", `Deployed ${projectName} (${framework}) — ${isPreview ? "preview" : "production"}`, { deploymentId, branch: branchName });
   } catch (err) {
     updateStatus(deploymentId, "failed");
+    logEvent(projectId, "deploy_failed", `Deploy failed: ${(err as Error).message}`, { deploymentId });
     console.error(`Deploy ${deploymentId} failed:`, err);
   } finally {
     releaseBuildSlot();

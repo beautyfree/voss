@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { client } from "../api/client";
 import { StatusBadge } from "../components/StatusDot";
+import { toast } from "../components/Toast";
 
 interface Deployment {
   id: string;
@@ -18,6 +19,7 @@ interface ProjectData {
   name: string;
   framework: string;
   domain: string | null;
+  repoUrl: string | null;
   latestDeployment: Deployment | null;
 }
 
@@ -33,6 +35,14 @@ interface EnvVar {
   isBuildTime: boolean;
 }
 
+interface Event {
+  id: string;
+  type: string;
+  message: string;
+  meta: string;
+  createdAt: string;
+}
+
 interface LogMessage {
   type: "log" | "status";
   data?: string;
@@ -45,6 +55,7 @@ export function ProjectDetail() {
   const [deploys, setDeploys] = useState<Deployment[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
 
@@ -58,8 +69,13 @@ export function ProjectDetail() {
   const [newDomain, setNewDomain] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
 
-  // Redeploy state
+  // Repo URL edit state
+  const [editingRepo, setEditingRepo] = useState(false);
+  const [repoInput, setRepoInput] = useState("");
+
+  // Redeploy / rollback state
   const [redeploying, setRedeploying] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
 
   // Log streaming state
   const [logDeployId, setLogDeployId] = useState<string | null>(null);
@@ -71,34 +87,33 @@ export function ProjectDetail() {
   const loadData = useCallback(async () => {
     if (!name) return;
     try {
-      const [pRes, dRes, dmRes, evRes] = await Promise.all([
+      const [pRes, dRes, dmRes, evRes, actRes] = await Promise.all([
         client.api.projects({ name }).get(),
         client.api.projects({ name }).deployments.get(),
         client.api.projects({ name }).domains.index.get(),
         client.api.projects({ name }).env.index.get(),
+        client.api.projects({ name }).events.index.get(),
       ]);
       if (pRes.data?.data) setProject(pRes.data.data as any);
       if (dRes.data?.data) setDeploys(dRes.data.data as any);
       if (dmRes.data?.data) setDomains(dmRes.data.data as any);
       if (evRes.data?.data) setEnvVars(evRes.data.data as any);
+      if (actRes.data?.data) setEvents(actRes.data.data as any);
     } catch {}
     setLoading(false);
   }, [name]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  // Cleanup WebSocket on unmount
   useEffect(() => {
     return () => { wsRef.current?.close(); };
   }, []);
 
   function connectLogs(deploymentId: string) {
-    // Close previous connection
     wsRef.current?.close();
     setLogs([]);
     setLogStatus(null);
@@ -118,21 +133,18 @@ export function ProjectDetail() {
           setLogs((prev) => [...prev, msg.data!]);
         } else if (msg.type === "status" && msg.status) {
           setLogStatus(msg.status);
-          if (msg.status === "live" || msg.status === "failed") {
-            // Refresh deployment list
+          if (msg.status === "live") {
+            toast("Deploy successful", "success");
+            loadData();
+          } else if (msg.status === "failed") {
+            toast("Deploy failed", "error");
             loadData();
           }
         }
       } catch {}
     };
-
-    ws.onerror = () => {
-      setLogs((prev) => [...prev, "[connection error]"]);
-    };
-
-    ws.onclose = () => {
-      setLogs((prev) => [...prev, "[stream ended]"]);
-    };
+    ws.onerror = () => setLogs((prev) => [...prev, "[connection error]"]);
+    ws.onclose = () => setLogs((prev) => [...prev, "[stream ended]"]);
   }
 
   async function addEnvVar() {
@@ -149,7 +161,8 @@ export function ProjectDetail() {
       setNewIsBuild(false);
       const res = await client.api.projects({ name }).env.index.get();
       if (res.data?.data) setEnvVars(res.data.data as any);
-    } catch {}
+      toast(`Set ${newKey.trim()}`, "success");
+    } catch { toast("Failed to set variable", "error"); }
     setEnvSaving(false);
   }
 
@@ -158,7 +171,8 @@ export function ProjectDetail() {
     try {
       await client.api.projects({ name }).env({ key }).delete();
       setEnvVars((prev) => prev.filter((v) => v.key !== key));
-    } catch {}
+      toast(`Deleted ${key}`, "success");
+    } catch { toast("Failed to delete variable", "error"); }
   }
 
   async function addDomain() {
@@ -171,7 +185,8 @@ export function ProjectDetail() {
       setNewDomain("");
       const res = await client.api.projects({ name }).domains.index.get();
       if (res.data?.data) setDomains(res.data.data as any);
-    } catch {}
+      toast("Domain added", "success");
+    } catch { toast("Failed to add domain", "error"); }
     setDomainSaving(false);
   }
 
@@ -180,7 +195,8 @@ export function ProjectDetail() {
     try {
       await client.api.projects({ name }).domains({ hostname }).delete();
       setDomains((prev) => prev.filter((d) => d.hostname !== hostname));
-    } catch {}
+      toast("Domain removed", "success");
+    } catch { toast("Failed to remove domain", "error"); }
   }
 
   async function fetchSavedLogs(deploymentId: string) {
@@ -214,9 +230,31 @@ export function ProjectDetail() {
         setTab("deployments");
         loadData();
         connectLogs((res.data.data as any).deploymentId);
+        toast("Redeploy started", "info");
       }
-    } catch {}
+    } catch { toast("Redeploy failed", "error"); }
     setRedeploying(false);
+  }
+
+  async function rollback() {
+    if (!name || rollingBack) return;
+    setRollingBack(true);
+    try {
+      await client.api.projects({ name }).rollback.post();
+      toast("Rolled back successfully", "success");
+      loadData();
+    } catch { toast("Rollback failed — no previous deployment", "error"); }
+    setRollingBack(false);
+  }
+
+  async function saveRepoUrl() {
+    if (!name) return;
+    try {
+      await client.api.projects({ name }).patch({ repoUrl: repoInput.trim() || undefined });
+      setProject((p) => p ? { ...p, repoUrl: repoInput.trim() || null } : p);
+      setEditingRepo(false);
+      toast("Repository linked", "success");
+    } catch { toast("Failed to save repo URL", "error"); }
   }
 
   if (loading) {
@@ -243,7 +281,7 @@ export function ProjectDetail() {
     );
   }
 
-  const tabs = ["overview", "deployments", "environment", "domains"];
+  const tabs = ["overview", "deployments", "environment", "domains", "activity"];
 
   return (
     <div>
@@ -252,15 +290,21 @@ export function ProjectDetail() {
           <Link to="/" style={{ color: "var(--muted)" }}>Projects</Link>
           {" / "}
         </p>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h1 className="page-title">{project.name}</h1>
           <button
-            className="btn btn-ghost"
+            className="btn btn-ghost btn-sm"
             onClick={redeploy}
             disabled={redeploying || !project.latestDeployment}
-            style={{ marginTop: 2 }}
           >
             {redeploying ? "Deploying..." : "Redeploy"}
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={rollback}
+            disabled={rollingBack || !project.latestDeployment}
+          >
+            {rollingBack ? "Rolling back..." : "Rollback"}
           </button>
         </div>
       </div>
@@ -293,6 +337,33 @@ export function ProjectDetail() {
               {domains.length > 0
                 ? domains.map((d) => d.hostname).join(", ")
                 : project.domain ?? "not configured"}
+            </span>
+            <span className="kv-key">Repository</span>
+            <span className="kv-val">
+              {editingRepo ? (
+                <div className="inline-edit">
+                  <input
+                    className="input"
+                    placeholder="https://github.com/user/repo"
+                    value={repoInput}
+                    onChange={(e) => setRepoInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveRepoUrl()}
+                    autoFocus
+                  />
+                  <button className="btn btn-primary btn-sm" onClick={saveRepoUrl}>Save</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditingRepo(false)}>Cancel</button>
+                </div>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono">{project.repoUrl ?? "not linked"}</span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { setRepoInput(project.repoUrl ?? ""); setEditingRepo(true); }}
+                  >
+                    Edit
+                  </button>
+                </span>
+              )}
             </span>
             {project.latestDeployment && (
               <>
@@ -332,7 +403,6 @@ export function ProjectDetail() {
                 </div>
               ))}
 
-              {/* Log viewer */}
               {logDeployId && (
                 <div className="log-viewer">
                   <div className="log-header">
@@ -369,7 +439,6 @@ export function ProjectDetail() {
 
       {tab === "environment" && (
         <div>
-          {/* Add env var form */}
           <div className="env-form">
             <input
               className="input"
@@ -398,7 +467,6 @@ export function ProjectDetail() {
             </button>
           </div>
 
-          {/* Env var list */}
           {!envVars.length ? (
             <div className="empty">
               <div className="empty-title">No environment variables</div>
@@ -430,7 +498,6 @@ export function ProjectDetail() {
 
       {tab === "domains" && (
         <div>
-          {/* Add domain form */}
           <div className="env-form">
             <input
               className="input input-wide"
@@ -465,6 +532,25 @@ export function ProjectDetail() {
                 >
                   Remove
                 </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === "activity" && (
+        <div>
+          {!events.length ? (
+            <div className="empty">
+              <div className="empty-title">No activity yet</div>
+              <p style={{ color: "var(--muted)", fontSize: 13 }}>Events will appear here after deploys, rollbacks, and config changes.</p>
+            </div>
+          ) : (
+            events.map((e) => (
+              <div key={e.id} className="event-row">
+                <span className="event-type">{e.type}</span>
+                <span className="event-msg">{e.message}</span>
+                <span className="event-time">{timeAgo(e.createdAt)}</span>
               </div>
             ))
           )}

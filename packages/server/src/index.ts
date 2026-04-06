@@ -7,9 +7,11 @@ import { envRoutes } from "./routes/env";
 import { domainRoutes } from "./routes/domains";
 import { webhookRoutes } from "./routes/webhook";
 import { healthRoutes } from "./routes/health";
+import { eventRoutes } from "./routes/events";
 import { wsRoutes } from "./routes/ws";
 import { checkDependencies } from "./services/startup";
 import { reconcileTraefikConfigs, writeDefaultMiddlewares } from "./services/traefik";
+import { startSslChecker } from "./services/ssl-check";
 import { existsSync } from "fs";
 import { join } from "path";
 
@@ -89,6 +91,7 @@ const app = new Elysia({
   .use(deployRoutes)
   .use(envRoutes)
   .use(domainRoutes)
+  .use(eventRoutes)
   // Dashboard: serve static files from packages/dashboard/dist
   .get("/assets/*", ({ params }) => {
     const fileName = (params as any)["*"];
@@ -127,5 +130,8 @@ const app = new Elysia({
 
 console.log(`voss-server running on :${PORT}`);
 console.log(`Dashboard: http://localhost:${PORT}`);
+
+// Start background SSL checker (every hour)
+startSslChecker();
 
 export type App = typeof app;

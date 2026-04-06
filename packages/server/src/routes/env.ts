@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
+import { logEvent } from "../services/events";
 
 export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
   .get("/", ({ params }) => {
@@ -61,6 +62,7 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
       .values({ id, projectId: project.id, key: body.key, value: body.value, isBuildTime: body.isBuildTime ?? false })
       .run();
 
+    logEvent(project.id, "env_set", `Set ${body.key}`, { key: body.key });
     return { data: { key: body.key, set: true } };
   }, {
     body: t.Object({
@@ -90,5 +92,6 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
       )
       .run();
 
+    logEvent(project.id, "env_delete", `Deleted ${params.key}`, { key: params.key });
     return { data: { key: params.key, deleted: true } };
   });

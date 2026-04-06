@@ -6,6 +6,7 @@ export const projects = sqliteTable("projects", {
   framework: text("framework").notNull().default("unknown"),
   serverId: text("server_id").notNull().default("local"),
   domain: text("domain"),
+  repoUrl: text("repo_url"),
   createdAt: text("created_at").notNull().default(""),
   updatedAt: text("updated_at").notNull().default(""),
 });
@@ -43,6 +44,15 @@ export const aliases = sqliteTable("aliases", {
   deploymentId: text("deployment_id").notNull().references(() => deployments.id),
   previousDeploymentId: text("previous_deployment_id"),
   type: text("type").notNull().default("production"),
+});
+
+export const events = sqliteTable("events", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id),
+  type: text("type").notNull(), // deploy, rollback, env_set, env_delete, domain_add, domain_remove
+  message: text("message").notNull(),
+  meta: text("meta").notNull().default("{}"), // JSON: deploymentId, key, hostname, etc.
+  createdAt: text("created_at").notNull().default(""),
 });
 
 export const domains = sqliteTable("domains", {

@@ -4,6 +4,7 @@ import {
   DOCKER_NETWORK_RUNNER,
   VOSS_UPLOADS_DIR,
   VOSS_LOG_DIR,
+  VOSS_DATA_DIR,
   type FrameworkId,
   type VossConfig,
 } from "@voss/shared";
@@ -86,6 +87,10 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
   const finalStartCmd = appDir ? `npx next start -p ${port}` : startCmd;
   const entrypoint = `cd /app && ${pmPrefix}${buildCmd} && cd ${startDir} && ${finalStartCmd}`;
 
+  // Persistent cache volume for node_modules — speeds up rebuilds
+  const cacheDir = `${VOSS_DATA_DIR}/cache/${opts.projectName}/node_modules`;
+  await $`mkdir -p ${cacheDir}`;
+
   const result = await $`docker run -d \
     --name ${containerName} \
     --network ${DOCKER_NETWORK_RUNNER} \
@@ -94,6 +99,7 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
     --cpus ${String(cpuLimit)} \
     --stop-timeout 30 \
     -v ${opts.uploadDir}:/app \
+    -v ${cacheDir}:/app/node_modules \
     -w /app \
     ${envFlags} \
     ${labels} \

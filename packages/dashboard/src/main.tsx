@@ -6,6 +6,7 @@ import { Projects } from "./pages/Projects";
 import { ProjectDetail } from "./pages/ProjectDetail";
 import { Server } from "./pages/Server";
 import { Login } from "./pages/Login";
+import { ToastContainer } from "./components/Toast";
 import "./styles.css";
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
           </Routes>
         </main>
       </div>
+      <ToastContainer />
     </BrowserRouter>
   );
 }
