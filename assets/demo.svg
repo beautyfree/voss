@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420">
+  <style>
+    @keyframes t1 { 0%,5% { opacity: 0 } 6%,100% { opacity: 1 } }
+    @keyframes t2 { 0%,10% { opacity: 0 } 11%,100% { opacity: 1 } }
+    @keyframes t3 { 0%,18% { opacity: 0 } 19%,100% { opacity: 1 } }
+    @keyframes t4 { 0%,22% { opacity: 0 } 23%,100% { opacity: 1 } }
+    @keyframes t5 { 0%,30% { opacity: 0 } 31%,100% { opacity: 1 } }
+    @keyframes t6 { 0%,45% { opacity: 0 } 46%,100% { opacity: 1 } }
+    @keyframes t7 { 0%,55% { opacity: 0 } 56%,100% { opacity: 1 } }
+    @keyframes t8 { 0%,65% { opacity: 0 } 66%,100% { opacity: 1 } }
+    @keyframes t9 { 0%,75% { opacity: 0 } 76%,100% { opacity: 1 } }
+    @keyframes t10 { 0%,85% { opacity: 0 } 86%,100% { opacity: 1 } }
+    @keyframes cursor { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+    .line { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; fill: #e0e0e0; }
+    .dim { fill: #666; }
+    .green { fill: #0cce6b; }
+    .cyan { fill: #56b6c2; }
+    .yellow { fill: #e5c07b; }
+    .bold { font-weight: 600; fill: #fff; }
+    .prompt { fill: #666; }
+  </style>
+  <!-- Terminal window -->
+  <rect width="640" height="420" rx="8" fill="#0a0a0a"/>
+  <!-- Title bar -->
+  <rect width="640" height="32" rx="8" fill="#1a1a1a"/>
+  <rect y="24" width="640" height="8" fill="#1a1a1a"/>
+  <circle cx="20" cy="16" r="6" fill="#ff5f56"/>
+  <circle cx="40" cy="16" r="6" fill="#ffbd2e"/>
+  <circle cx="60" cy="16" r="6" fill="#27c93f"/>
+  <text x="320" y="20" text-anchor="middle" class="line dim" font-size="12">Terminal</text>
+
+  <!-- Line 1: prompt + command -->
+  <g style="animation: t1 8s infinite">
+    <text x="20" y="62" class="line prompt">$</text>
+    <text x="35" y="62" class="line bold">voss deploy</text>
+  </g>
+
+  <!-- Line 2: detected -->
+  <g style="animation: t2 8s infinite">
+    <text x="35" y="84" class="line">  Detected: </text>
+    <text x="133" y="84" class="line cyan">Next.js</text>
+    <text x="189" y="84" class="line dim">(next.config.ts)</text>
+  </g>
+
+  <!-- Line 3: hashing -->
+  <g style="animation: t3 8s infinite">
+    <text x="35" y="106" class="line dim">  Hashing files...</text>
+  </g>
+
+  <!-- Line 4: uploading -->
+  <g style="animation: t4 8s infinite">
+    <text x="35" y="128" class="line">  Uploading: </text>
+    <text x="133" y="128" class="line bold">80 files</text>
+    <text x="200" y="128" class="line dim">(3 changed, 77 cached)</text>
+  </g>
+
+  <!-- Line 5: building -->
+  <g style="animation: t5 8s infinite">
+    <text x="35" y="158" class="line">  Building...</text>
+  </g>
+
+  <!-- Line 6: pnpm install -->
+  <g style="animation: t6 8s infinite">
+    <text x="55" y="180" class="line dim">  > pnpm install</text>
+    <text x="198" y="180" class="line yellow">(17.8s)</text>
+  </g>
+
+  <!-- Line 7: pnpm build -->
+  <g style="animation: t7 8s infinite">
+    <text x="55" y="202" class="line dim">  > pnpm run build</text>
+    <text x="218" y="202" class="line yellow">(47.6s)</text>
+  </g>
+
+  <!-- Line 8: health check -->
+  <g style="animation: t8 8s infinite">
+    <text x="35" y="232" class="line">  Health check: </text>
+    <text x="155" y="232" class="line green">● passed</text>
+    <text x="228" y="232" class="line dim">(1.2s)</text>
+  </g>
+
+  <!-- Line 9: URL -->
+  <g style="animation: t9 8s infinite">
+    <text x="35" y="262" class="line green">  ✓ </text>
+    <text x="56" y="262" class="line bold">https://agent-cv.dev</text>
+  </g>
+
+  <!-- Line 10: next prompt -->
+  <g style="animation: t10 8s infinite">
+    <text x="20" y="294" class="line prompt">$</text>
+    <rect x="35" y="282" width="8" height="16" fill="#e0e0e0" style="animation: cursor 1s infinite"/>
+  </g>
+</svg>

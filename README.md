@@ -2,16 +2,9 @@
 
 Deploy to your own VPS. One command.
 
-```
-$ voss deploy
-  Detected: Next.js (next.config.ts)
-  Uploading: 80 files (3 changed, 77 cached)
-  Building...
-    > pnpm install (17.8s)
-    > pnpm run build (47.6s)
-  Health check: passed
-  https://agent-cv.dev
-```
+<p align="center">
+  <img src="assets/demo.svg" alt="voss deploy demo" width="640">
+</p>
 
 ## What is this
 
