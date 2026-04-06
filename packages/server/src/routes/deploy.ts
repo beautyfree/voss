@@ -230,6 +230,85 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
     return { data: deploys };
   })
 
+  // Redeploy — re-run last deployment with same config
+  .post("/projects/:name/redeploy", async ({ params }) => {
+    const db = getDb();
+    const project = db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.name, params.name))
+      .get();
+
+    if (!project) {
+      return new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: "Project not found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Find last deployment to get config
+    const lastDeploy = db
+      .select()
+      .from(schema.deployments)
+      .where(eq(schema.deployments.projectId, project.id))
+      .orderBy(desc(schema.deployments.createdAt))
+      .limit(1)
+      .get();
+
+    if (!lastDeploy) {
+      return new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: "No previous deployment to redeploy" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const config = JSON.parse(lastDeploy.configSnapshot || "{}") as VossConfig;
+    const framework = config.framework ?? project.framework ?? "unknown";
+    const runner = RUNNERS[framework];
+    const deploymentId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Get current env vars
+    const envVarRows = db
+      .select()
+      .from(schema.envVars)
+      .where(eq(schema.envVars.projectId, project.id))
+      .all();
+    const envMap: Record<string, string> = {};
+    for (const v of envVarRows) envMap[v.key] = v.value;
+
+    const branchName = lastDeploy.branch ?? "main";
+    const logPath = `${VOSS_LOG_DIR}/${project.name}/${deploymentId}.log`;
+
+    db.insert(schema.deployments)
+      .values({
+        id: deploymentId,
+        projectId: project.id,
+        status: "queued",
+        branch: branchName,
+        commitSha: lastDeploy.commitSha,
+        runnerImage: runner.image,
+        buildCommand: config.buildCommand ?? runner.buildCommand,
+        startCommand: config.startCommand ?? runner.startCommand,
+        logPath,
+        envVarsSnapshot: JSON.stringify(envMap),
+        configSnapshot: JSON.stringify(config),
+        createdAt: now,
+      })
+      .run();
+
+    deployInBackground(deploymentId, project.name, project.id, config, envMap, false, branchName);
+
+    return {
+      data: {
+        deploymentId,
+        projectName: project.name,
+        framework,
+        status: "queued" as DeploymentStatus,
+      },
+    };
+  })
+
   // Rollback
   .post("/projects/:name/rollback", async ({ params }) => {
     const db = getDb();
@@ -289,7 +368,7 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
 
 // ── Background deploy ──
 
-async function deployInBackground(
+export async function deployInBackground(
   deploymentId: string,
   projectName: string,
   projectId: string,
