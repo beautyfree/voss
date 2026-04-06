@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { client } from "../api/client";
+import { api } from "../api/client";
 import { StatusDot } from "../components/StatusDot";
 
 interface Project {
@@ -17,10 +17,8 @@ export function Projects() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    client.api.projects.index.get()
-      .then((res) => {
-        if (res.data?.data) setProjects(res.data.data as any);
-      })
+    api<Project[]>("/api/projects")
+      .then(setProjects)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);

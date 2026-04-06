@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { client } from "../api/client";
+import { api } from "../api/client";
 
 interface ContainerStats {
   name: string;
@@ -25,8 +25,8 @@ export function Server() {
 
   useEffect(() => {
     Promise.all([
-      client.api.health.get().then((r) => { if (r.data) setHealth(r.data); }),
-      client.api.stats.get().then((r) => { if (r.data?.data) setStats(r.data.data as any); }),
+      api("/api/health").then(setHealth),
+      api<Stats>("/api/stats").then(setStats),
     ])
       .catch(() => {})
       .finally(() => setLoading(false));
