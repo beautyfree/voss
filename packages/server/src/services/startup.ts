@@ -30,34 +30,32 @@ export async function checkDependencies() {
     }
   }
 
-  // Traefik
+  // Traefik (non-fatal — may still be starting)
   try {
     const result = await $`docker ps --filter name=traefik --format '{{.Names}}'`.quiet();
     const name = result.text().trim();
     if (name) {
       console.log("  ✓ Traefik");
     } else {
-      console.error("  ✕ Traefik container is not running");
-      console.error("    Fix: Start Traefik with the install script");
-      process.exit(1);
+      console.log("  ⚠ Traefik not running yet (deploys will fail until it starts)");
     }
   } catch {
-    console.error("  ✕ Could not check Traefik status");
-    process.exit(1);
+    console.log("  ⚠ Could not check Traefik status");
   }
 
   // Disk space
   try {
-    const result = await $`df -BM / --output=avail`.quiet();
-    const lines = result.text().trim().split("\n");
-    const availMB = parseInt(lines[lines.length - 1]);
-    if (availMB < 1024) {
-      console.error(`  ✕ Low disk space: ${availMB}MB available (need 1GB+)`);
-      process.exit(1);
+    const result = await $`df -m / | tail -1 | awk '{print $4}'`.quiet();
+    const availMB = parseInt(result.text().trim());
+    if (!isNaN(availMB)) {
+      if (availMB < 1024) {
+        console.log(`  ⚠ Low disk space: ${availMB}MB available (recommend 1GB+)`);
+      } else {
+        console.log(`  ✓ Disk: ${availMB}MB available`);
+      }
     }
-    console.log(`  ✓ Disk: ${availMB}MB available`);
   } catch {
-    console.log("  ? Disk check skipped (non-Linux)");
+    // Ignore — non-critical
   }
 
   console.log("All checks passed.\n");

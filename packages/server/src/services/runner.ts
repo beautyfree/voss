@@ -44,34 +44,47 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
     await $`docker pull ${runner.image}`;
   }
 
-  // Build the command chain: copy code, install deps, build, start
-  const buildCmd = opts.config.buildCommand ?? runner.buildCommand;
-  const startCmd = opts.config.startCommand ?? runner.startCommand;
+  // Detect package manager from lock files
+  const { prefix: pmPrefix, pm } = await detectPackageManager(opts.uploadDir);
+
+  // Use rootDirectory from config, or auto-detect monorepo app directory
+  const appDir = opts.config.rootDirectory ?? await detectAppDir(opts.uploadDir, opts.framework);
+
+  // Build the command chain: install pkg manager, install deps, build, start
+  // Replace npm with detected package manager in default commands
+  let buildCmd = opts.config.buildCommand ?? runner.buildCommand;
+  let startCmd = opts.config.startCommand ?? runner.startCommand;
+  if (pm !== "npm" && !opts.config.buildCommand) {
+    buildCmd = buildCmd.replace(/\bnpm\b/g, pm);
+  }
+  if (pm !== "npm" && !opts.config.startCommand) {
+    startCmd = startCmd.replace(/\bnpm\b/g, pm);
+  }
   const port = runner.port;
 
-  // Env vars as -e flags
-  const envFlags = Object.entries(opts.envVars).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  // Env vars as -e flags + NODE_OPTIONS for heap size
+  const allEnv: Record<string, string> = {
+    NODE_OPTIONS: "--max-old-space-size=1024",
+    ...opts.envVars,
+  };
+  const envFlags = Object.entries(allEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
 
-  // Resource limits
-  const memoryLimit = opts.config.resources?.memory ?? "512m";
-  const cpuLimit = opts.config.resources?.cpu ?? 0.5;
+  // Resource limits — default 1.5GB for build (Next.js needs ~1GB heap)
+  const memoryLimit = opts.config.resources?.memory ?? "1536m";
+  const cpuLimit = opts.config.resources?.cpu ?? 1;
 
-  // Traefik labels for routing
-  const routerName = `voss-${opts.projectName}`;
+  // Labels for identification only — routing is via Traefik file provider
   const labels = [
-    `--label=traefik.enable=true`,
-    `--label=traefik.http.routers.${routerName}.rule=Host(\`${opts.projectName}.{{DOMAIN}}\`)`,
-    `--label=traefik.http.routers.${routerName}.entrypoints=websecure`,
-    `--label=traefik.http.routers.${routerName}.tls=true`,
-    `--label=traefik.http.routers.${routerName}.tls.certresolver=letsencrypt`,
-    `--label=traefik.http.services.${routerName}.loadbalancer.server.port=${port}`,
     `--label=voss.project=${opts.projectName}`,
     `--label=voss.deployment=${opts.deploymentId}`,
   ];
 
   // Create and start container
-  // The entrypoint: cd into code dir, run build, then start
-  const entrypoint = `cd /app && ${buildCmd} && ${startCmd}`;
+  // For monorepos: install from root, then start from app dir
+  const startDir = appDir ? `/app/${appDir}` : "/app";
+  // In monorepo, use npx/pnpx to run framework start directly from app dir
+  const finalStartCmd = appDir ? `npx next start -p ${port}` : startCmd;
+  const entrypoint = `cd /app && ${pmPrefix}${buildCmd} && cd ${startDir} && ${finalStartCmd}`;
 
   const result = await $`docker run -d \
     --name ${containerName} \
@@ -90,6 +103,64 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
   const containerId = result.trim();
 
   return { containerId, containerName };
+}
+
+/**
+ * Detect the app directory in a monorepo.
+ * Searches apps/ and packages/ for framework config files.
+ * Returns relative path from root, or null if not a monorepo.
+ */
+async function detectAppDir(uploadDir: string, framework: FrameworkId): Promise<string | null> {
+  const { existsSync, readdirSync, statSync } = await import("fs");
+  const { join } = await import("path");
+
+  // If framework config is in root, not a monorepo
+  const runner = RUNNERS[framework];
+  if (runner.detectFiles.some(f => existsSync(join(uploadDir, f)))) {
+    // Check if there's also a turbo.json or workspaces — might be monorepo root
+    const hasTurbo = existsSync(join(uploadDir, "turbo.json"));
+    if (!hasTurbo) return null;
+  }
+
+  // Search common monorepo dirs for the framework config
+  const searchDirs = ["apps", "packages"];
+  for (const dir of searchDirs) {
+    const dirPath = join(uploadDir, dir);
+    if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) continue;
+
+    for (const sub of readdirSync(dirPath)) {
+      const subPath = join(dirPath, sub);
+      if (!statSync(subPath).isDirectory()) continue;
+
+      // Check for framework config files in subdirectory
+      for (const detectFile of runner.detectFiles) {
+        if (existsSync(join(subPath, detectFile))) {
+          return `${dir}/${sub}`;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Detect package manager from lock files and return install command prefix.
+ */
+async function detectPackageManager(uploadDir: string): Promise<{ prefix: string; pm: string }> {
+  const { existsSync } = await import("fs");
+  const { join } = await import("path");
+
+  if (existsSync(join(uploadDir, "pnpm-lock.yaml"))) {
+    return { prefix: "corepack enable && corepack prepare pnpm@latest --activate && ", pm: "pnpm" };
+  }
+  if (existsSync(join(uploadDir, "yarn.lock"))) {
+    return { prefix: "corepack enable && ", pm: "yarn" };
+  }
+  if (existsSync(join(uploadDir, "bun.lock")) || existsSync(join(uploadDir, "bun.lockb"))) {
+    return { prefix: "npm install -g bun && ", pm: "bun" };
+  }
+  return { prefix: "", pm: "npm" };
 }
 
 /**

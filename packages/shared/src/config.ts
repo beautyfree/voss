@@ -30,6 +30,13 @@ export function parseConfig(raw: unknown): VossConfig {
     config.framework = obj.framework as FrameworkId;
   }
 
+  if (obj.rootDirectory !== undefined) {
+    if (typeof obj.rootDirectory !== "string") {
+      throw new ConfigError("INVALID_CONFIG", "'rootDirectory' must be a string");
+    }
+    config.rootDirectory = obj.rootDirectory;
+  }
+
   if (obj.buildCommand !== undefined) {
     if (typeof obj.buildCommand !== "string") {
       throw new ConfigError("INVALID_CONFIG", "'buildCommand' must be a string");

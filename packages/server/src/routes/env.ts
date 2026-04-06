@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 
-export const envRoutes = new Elysia({ prefix: "/api/projects/:projectName/env" })
+export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
   .get("/", ({ params }) => {
     const db = getDb();
     const project = db

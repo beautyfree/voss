@@ -76,6 +76,7 @@ export interface Alias {
 export interface VossConfig {
   name: string;
   framework?: FrameworkId;
+  rootDirectory?: string;
   buildCommand?: string;
   startCommand?: string;
   outputDirectory?: string;

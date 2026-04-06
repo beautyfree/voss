@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # voss server installer
-# Usage: curl -fsSL install.voss.dev | sh
+# Usage: curl -fsSL install.voss.dev | bash
 
 echo ""
 echo "  ██╗   ██╗ ██████╗ ███████╗███████╗"
@@ -72,8 +72,11 @@ if [ "$TOTAL_RAM_MB" -lt 2048 ]; then
   fi
 fi
 
-# ── Generate API key ──
-API_KEY=$(openssl rand -hex 32)
+# ── Generate or reuse API key ──
+if [ -f /etc/voss/config.json ]; then
+  EXISTING_KEY=$(grep -o '"apiKey": *"[^"]*"' /etc/voss/config.json | cut -d'"' -f4)
+fi
+API_KEY=${EXISTING_KEY:-$(openssl rand -hex 32)}
 
 # ── Detect server IP ──
 SERVER_IP=$(curl -4 -s ifconfig.me || curl -4 -s icanhazip.com || echo "127.0.0.1")
@@ -103,10 +106,6 @@ entryPoints:
       tls: true
 
 providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false
-    network: voss_runner
   file:
     directory: /etc/traefik/dynamic
     watch: true
@@ -134,6 +133,8 @@ http:
 EOF
 
 # ── Start Traefik ──
+touch /etc/traefik/acme.json
+chmod 600 /etc/traefik/acme.json
 docker rm -f traefik 2>/dev/null || true
 docker run -d \
   --name traefik \
@@ -141,9 +142,8 @@ docker run -d \
   --network voss_runner \
   -p 80:80 \
   -p 443:443 \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /etc/traefik/traefik.yml:/etc/traefik/traefik.yml:ro \
-  -v /etc/traefik/dynamic:/etc/traefik/dynamic:ro \
+  -v /etc/traefik/dynamic:/etc/traefik/dynamic \
   -v /etc/traefik/acme.json:/etc/traefik/acme.json \
   traefik:v3.6
 echo "  ✓ Traefik started"
@@ -174,9 +174,65 @@ if command -v ufw &> /dev/null; then
   echo "  ✓ Firewall configured"
 fi
 
-# ── TODO: Download and install voss-server binary ──
-# For now, voss-server must be manually started:
-#   VOSS_API_KEY=<key> bun packages/server/src/index.ts
+# ── Install Bun ──
+if ! command -v bun &> /dev/null; then
+  echo "  Installing Bun..."
+  apt-get install -y -qq unzip > /dev/null 2>&1
+  curl -fsSL https://bun.sh/install | bash
+  export BUN_INSTALL="$HOME/.bun"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+  # Also make it available system-wide
+  ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun 2>/dev/null || true
+  echo "  ✓ Bun installed"
+else
+  echo "  ✓ Bun already installed"
+fi
+
+# ── Clone and install voss-server ──
+VOSS_DIR=/opt/voss
+if [ -d "$VOSS_DIR" ]; then
+  echo "  Updating voss-server..."
+  cd "$VOSS_DIR" && git pull --quiet
+else
+  echo "  Cloning voss-server..."
+  git clone --quiet --depth 1 https://github.com/beautyfree/voss.git "$VOSS_DIR"
+fi
+cd "$VOSS_DIR" && bun install --production 2>/dev/null
+echo "  ✓ voss-server installed"
+
+# ── Create systemd service ──
+cat > /etc/systemd/system/voss-server.service << EOF
+[Unit]
+Description=voss deployment server
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/voss
+ExecStart=$(which bun) run packages/server/src/index.ts
+Environment=VOSS_API_KEY=${API_KEY}
+Environment=PORT=3456
+Environment=VOSS_DOMAIN=${SERVER_IP}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable voss-server
+systemctl start voss-server
+echo "  ✓ voss-server running (systemd)"
+
+# ── Verify server is up ──
+sleep 2
+if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3456/api/health | grep -q "200"; then
+  echo "  ✓ voss-server responding on :3456"
+else
+  echo "  ⚠ voss-server may still be starting... check: systemctl status voss-server"
+fi
 
 echo ""
 echo "  ═══════════════════════════════════════"

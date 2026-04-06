@@ -102,7 +102,7 @@ export const DETECTION_ORDER: FrameworkId[] = [
 
 export const MAX_UPLOAD_SIZE = 500 * 1024 * 1024; // 500MB
 export const MAX_CONCURRENT_BUILDS = 1;
-export const HEALTH_CHECK_DEFAULT_TIMEOUT = 60_000; // 60s
+export const HEALTH_CHECK_DEFAULT_TIMEOUT = 300_000; // 5 min (build + start on 1 CPU takes time)
 export const HEALTH_CHECK_DEFAULT_PATH = "/";
 export const CONTAINER_KEEP_COUNT = 2; // keep last N deployments alive for rollback
 export const LOG_KEEP_COUNT = 10; // keep last N deploy log files

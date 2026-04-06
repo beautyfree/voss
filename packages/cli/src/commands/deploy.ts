@@ -1,11 +1,12 @@
 import { createHash } from "crypto";
 import { readdir, stat } from "fs/promises";
 import { join, relative } from "path";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { requireCredentials, api } from "../lib/credentials";
 import { detectFramework, parseConfig, RUNNERS, type VossConfig } from "@voss/shared";
 
 export default async function deploy(args: string[]) {
+  const verbose = args.includes("--verbose") || args.includes("-v");
   const creds = requireCredentials();
   const projectDir = process.cwd();
 
@@ -39,36 +40,63 @@ export default async function deploy(args: string[]) {
     }),
   });
 
+  const manifestResult = await manifestResp.json() as any;
+
   if (!manifestResp.ok) {
-    const err = await manifestResp.json();
-    console.error(`  ✕ ${(err as any).message}`);
+    console.error(`  ✕ ${manifestResult.message ?? "Manifest upload failed"}`);
     process.exit(1);
   }
 
-  const { data: { missing } } = await manifestResp.json() as any;
+  const { missing } = manifestResult.data;
 
   // 4. Upload changed files as tar
   const changedCount = missing.length;
   const totalCount = Object.keys(manifest).length;
   console.log(`  Uploading: ${totalCount} files (${changedCount} changed, ${totalCount - changedCount} cached)`);
 
-  // Create tar of all files (for v0, send everything — dedup optimization later)
+  // Create tar of all files using file list (avoids arg length limits)
+  const fileListPath = join(projectDir, ".voss-files.txt");
+  await Bun.write(fileListPath, files.join("\n"));
+
+  if (verbose) console.log(`    tar: ${files.length} files from ${projectDir}`);
+
   const tarProc = Bun.spawn(
-    ["tar", "czf", "-", ...files],
-    { cwd: projectDir, stdout: "pipe" }
+    ["tar", "czf", "-", "-T", ".voss-files.txt"],
+    { cwd: projectDir, stdout: "pipe", stderr: "pipe" }
   );
   const tarBlob = await new Response(tarProc.stdout).blob();
+  const tarStderr = await new Response(tarProc.stderr).text();
   await tarProc.exited;
 
-  const uploadResp = await api(creds, `/api/deploy/upload/${config.name}`, {
-    method: "POST",
-    body: tarBlob,
-    headers: { "Content-Type": "application/octet-stream" },
-  });
+  // Cleanup file list
+  try { await Bun.file(fileListPath).delete(); } catch {}
+
+  if (tarProc.exitCode !== 0) {
+    console.error(`  ✕ tar failed: ${tarStderr}`);
+    process.exit(1);
+  }
+
+  if (verbose) console.log(`    tar size: ${(tarBlob.size / 1024).toFixed(0)}KB`);
+
+  const uploadUrl = `/api/deploy/upload/${config.name}`;
+  if (verbose) console.log(`    POST ${creds.serverUrl}${uploadUrl}`);
+
+  let uploadResp: Response;
+  try {
+    uploadResp = await api(creds, uploadUrl, {
+      method: "POST",
+      body: tarBlob,
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+  } catch (err) {
+    console.error(`  ✕ Upload failed: ${(err as Error).message}`);
+    if (verbose) console.error(`    ${err}`);
+    process.exit(1);
+  }
 
   if (!uploadResp.ok) {
-    const err = await uploadResp.json();
-    console.error(`  ✕ Upload failed: ${(err as any).message}`);
+    const errText = await uploadResp.text();
+    console.error(`  ✕ Upload failed (${uploadResp.status}): ${errText}`);
     process.exit(1);
   }
 
@@ -79,13 +107,14 @@ export default async function deploy(args: string[]) {
     body: JSON.stringify({ projectName: config.name, config }),
   });
 
+  const deployResult = await deployResp.json() as any;
+
   if (!deployResp.ok) {
-    const err = await deployResp.json();
-    console.error(`  ✕ Deploy failed: ${(err as any).message}`);
+    console.error(`  ✕ Deploy failed: ${deployResult.message ?? "Unknown error"}`);
     process.exit(1);
   }
 
-  const { data: deploy } = await deployResp.json() as any;
+  const deploy = deployResult.data;
 
   // 6. Stream logs via WebSocket, fall back to polling
   const wsUrl = creds.serverUrl.replace("https://", "wss://").replace("http://", "ws://");
@@ -195,19 +224,45 @@ async function listFiles(dir: string): Promise<string[]> {
     "node_modules",
     ".git",
     ".voss",
+    ".turbo",
+    ".cache",
+    ".vercel",
+    ".svelte-kit",
     "dist",
     ".next",
     ".nuxt",
     ".output",
     ".env",
     ".env.local",
+    ".env.production",
+    ".DS_Store",
+    "coverage",
+    ".nyc_output",
   ];
 
-  // Load .vossignore if exists
+  // Load .gitignore patterns
+  const gitignorePath = join(dir, ".gitignore");
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        // Strip trailing slash for directory patterns
+        ignorePatterns.push(trimmed.replace(/\/$/, ""));
+      }
+    }
+  }
+
+  // Load .vossignore patterns (overrides)
   const vossignorePath = join(dir, ".vossignore");
   if (existsSync(vossignorePath)) {
-    const content = await Bun.file(vossignorePath).text();
-    ignorePatterns.push(...content.split("\n").filter(Boolean));
+    const content = readFileSync(vossignorePath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        ignorePatterns.push(trimmed.replace(/\/$/, ""));
+      }
+    }
   }
 
   const files: string[] = [];
@@ -216,7 +271,7 @@ async function listFiles(dir: string): Promise<string[]> {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const name = entry.name;
-      if (ignorePatterns.some((p) => name === p || name.startsWith(p + "/"))) continue;
+      if (ignorePatterns.some((p) => name === p || name.startsWith("." + p))) continue;
 
       const fullPath = join(current, name);
       if (entry.isDirectory()) {

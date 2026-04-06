@@ -8,24 +8,34 @@ export default async function login(args: string[]) {
     process.exit(1);
   }
 
-  const serverUrl = serverIp.startsWith("http")
-    ? serverIp
-    : `https://${serverIp}:3456`;
+  // Use HTTP for bare IPs (no SSL cert), HTTPS for domains
+  let serverUrl: string;
+  if (serverIp.startsWith("http")) {
+    serverUrl = serverIp;
+  } else if (/^\d+\.\d+\.\d+\.\d+$/.test(serverIp)) {
+    serverUrl = `http://${serverIp}:3456`;
+  } else {
+    serverUrl = `https://${serverIp}`;
+  }
 
   console.log(`  Connecting to ${serverUrl}...`);
 
   try {
-    const resp = await api({ serverUrl, apiKey }, "/api/health");
-
-    if (!resp.ok) {
-      console.error(`  ✕ Server returned ${resp.status}`);
-      if (resp.status === 401) {
-        console.error("    Invalid API key");
-      }
+    // First check server is reachable (public endpoint)
+    const healthResp = await api({ serverUrl, apiKey }, "/api/health");
+    if (!healthResp.ok) {
+      console.error(`  ✕ Server returned ${healthResp.status}`);
       process.exit(1);
     }
 
-    const data = await resp.json() as { version: string; uptime: number };
+    // Then verify API key works (authenticated endpoint)
+    const authResp = await api({ serverUrl, apiKey }, "/api/projects");
+    if (!authResp.ok) {
+      console.error("  ✕ Invalid API key");
+      process.exit(1);
+    }
+
+    const data = await healthResp.json() as { version: string; uptime: number };
 
     await saveCredentials({ serverUrl, apiKey });
 

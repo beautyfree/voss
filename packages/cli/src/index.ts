@@ -13,6 +13,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   whoami: () => import("./commands/whoami").then((m) => m.default(args.slice(1))),
   projects: () => import("./commands/projects").then((m) => m.default(args.slice(1))),
   init: () => import("./commands/init").then((m) => m.default(args.slice(1))),
+  domains: () => import("./commands/domains").then((m) => m.default(args.slice(1))),
 };
 
 if (!command || command === "--help" || command === "-h") {
@@ -30,6 +31,9 @@ if (!command || command === "--help" || command === "-h") {
     voss rollback                      Rollback to previous deployment
     voss whoami                        Show connected server info
     voss projects                      List all projects on server
+    voss domains add <hostname>        Add custom domain
+    voss domains remove <hostname>     Remove custom domain
+    voss domains                       List domains
 
   Options:
     --help, -h                         Show this help

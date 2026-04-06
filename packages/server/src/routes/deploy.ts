@@ -82,13 +82,13 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
   })
 
   // Upload files (SHA dedup step 2 — tar of changed files)
-  .post("/deploy/upload/:projectName", async ({ params, body }) => {
-    const uploadDir = `${VOSS_UPLOADS_DIR}/${params.projectName}`;
+  .post("/deploy/upload/:name", async ({ params, body }) => {
+    const uploadDir = `${VOSS_UPLOADS_DIR}/${params.name}`;
     await mkdir(uploadDir, { recursive: true });
 
-    // body is the tar file
     const tarPath = `${uploadDir}/_upload.tar.gz`;
-    await Bun.write(tarPath, body as Blob);
+    // body is ArrayBuffer when parse type is set correctly
+    await Bun.write(tarPath, body as ArrayBuffer);
 
     // Extract
     const proc = Bun.spawn(["tar", "xzf", tarPath, "-C", uploadDir]);
@@ -98,6 +98,8 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
     await Bun.file(tarPath).delete();
 
     return { data: { uploaded: true, dir: uploadDir } };
+  }, {
+    parse: "arrayBuffer",
   })
 
   // Trigger deploy
@@ -326,7 +328,7 @@ async function deployInBackground(
     updateStatus(deploymentId, "health_checking");
     broadcastLog(deploymentId, "Running health check...");
     const hcPath = config.healthCheck?.path ?? HEALTH_CHECK_DEFAULT_PATH;
-    const hcTimeout = (config.healthCheck?.timeout ?? 60) * 1000;
+    const hcTimeout = (config.healthCheck?.timeout ?? 300) * 1000;
     const healthy = await healthCheck(containerName, hcPath, hcTimeout);
 
     if (!healthy) {
