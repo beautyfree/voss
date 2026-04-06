@@ -54,6 +54,10 @@ export function ProjectDetail() {
   const [newIsBuild, setNewIsBuild] = useState(false);
   const [envSaving, setEnvSaving] = useState(false);
 
+  // Domain form state
+  const [newDomain, setNewDomain] = useState("");
+  const [domainSaving, setDomainSaving] = useState(false);
+
   // Redeploy state
   const [redeploying, setRedeploying] = useState(false);
 
@@ -156,6 +160,50 @@ export function ProjectDetail() {
       await api(`/api/projects/${name}/env/${encodeURIComponent(key)}`, { method: "DELETE" });
       setEnvVars((prev) => prev.filter((v) => v.key !== key));
     } catch {}
+  }
+
+  async function addDomain() {
+    if (!name || !newDomain.trim()) return;
+    setDomainSaving(true);
+    try {
+      await api(`/api/projects/${name}/domains/`, {
+        method: "POST",
+        body: JSON.stringify({ hostname: newDomain.trim().toLowerCase() }),
+      });
+      setNewDomain("");
+      const dm = await api<Domain[]>(`/api/projects/${name}/domains`);
+      setDomains(dm);
+    } catch {}
+    setDomainSaving(false);
+  }
+
+  async function deleteDomain(hostname: string) {
+    if (!name) return;
+    try {
+      await api(`/api/projects/${name}/domains/${encodeURIComponent(hostname)}`, { method: "DELETE" });
+      setDomains((prev) => prev.filter((d) => d.hostname !== hostname));
+    } catch {}
+  }
+
+  async function fetchSavedLogs(deploymentId: string) {
+    setLogDeployId(deploymentId);
+    setLogs([]);
+    setLogStatus(null);
+    wsRef.current?.close();
+    try {
+      const data = await api<string[]>(`/api/deployments/${deploymentId}/logs`);
+      setLogs(data);
+    } catch {
+      setLogs(["[no logs available]"]);
+    }
+  }
+
+  function viewLogs(d: Deployment) {
+    if (d.status === "queued" || d.status === "building" || d.status === "deploying" || d.status === "health_checking") {
+      connectLogs(d.id);
+    } else {
+      fetchSavedLogs(d.id);
+    }
   }
 
   async function redeploy() {
@@ -275,7 +323,7 @@ export function ProjectDetail() {
                 <div
                   key={d.id}
                   className={`row row-clickable ${logDeployId === d.id ? "row-selected" : ""}`}
-                  onClick={() => connectLogs(d.id)}
+                  onClick={() => viewLogs(d)}
                 >
                   <StatusBadge status={d.status} />
                   <span className="row-meta">{d.id.slice(0, 8)}</span>
@@ -384,10 +432,26 @@ export function ProjectDetail() {
 
       {tab === "domains" && (
         <div>
+          {/* Add domain form */}
+          <div className="env-form">
+            <input
+              className="input input-wide"
+              placeholder="example.com"
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addDomain()}
+            />
+            <button className="btn btn-primary btn-sm" onClick={addDomain} disabled={domainSaving || !newDomain.trim()}>
+              {domainSaving ? "Adding..." : "Add domain"}
+            </button>
+          </div>
+
           {!domains.length ? (
             <div className="empty">
               <div className="empty-title">No domains configured</div>
-              <code className="empty-code">voss domains add example.com</code>
+              <p style={{ color: "var(--muted)", fontSize: 13 }}>
+                Add a domain above and point its DNS A record to your server IP.
+              </p>
             </div>
           ) : (
             domains.map((d) => (
@@ -397,6 +461,12 @@ export function ProjectDetail() {
                   <span className={`dot ${d.sslStatus === "active" ? "dot-live" : "dot-pending"}`} />
                   {d.sslStatus === "active" ? "SSL active" : "SSL pending"}
                 </span>
+                <button
+                  className="btn btn-ghost btn-sm btn-danger"
+                  onClick={() => deleteDomain(d.hostname)}
+                >
+                  Remove
+                </button>
               </div>
             ))
           )}

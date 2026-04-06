@@ -1,14 +1,25 @@
 {
-  "name": "@voss/cli",
+  "name": "voss",
   "version": "0.1.0",
+  "description": "Deploy to your own VPS — self-hosted Vercel alternative",
   "type": "module",
   "bin": {
-    "voss": "src/index.ts"
+    "voss": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "bun src/index.ts",
-    "build": "bun build src/index.ts --compile --outfile dist/voss",
+    "build": "bun build src/index.ts --outdir dist --target bun --bundle",
+    "build:binary": "bun build src/index.ts --compile --outfile dist/voss",
+    "prepublishOnly": "bun run build",
     "test": "bun test"
+  },
+  "keywords": ["deploy", "vps", "self-hosted", "vercel", "cli", "paas"],
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "dependencies": {
     "@voss/shared": "workspace:*"

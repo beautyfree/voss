@@ -184,6 +184,31 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
     };
   })
 
+  // Get deployment logs (saved file)
+  .get("/deployments/:id/logs", async ({ params }) => {
+    const db = getDb();
+    const deployment = db
+      .select()
+      .from(schema.deployments)
+      .where(eq(schema.deployments.id, params.id))
+      .get();
+
+    if (!deployment) {
+      return new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: "Deployment not found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!deployment.logPath || !existsSync(deployment.logPath)) {
+      return { data: ["[no logs available]"] };
+    }
+
+    const content = await Bun.file(deployment.logPath).text();
+    const lines = content.split("\n").filter(Boolean);
+    return { data: lines };
+  })
+
   // Get deployment status
   .get("/deployments/:id", ({ params }) => {
     const db = getDb();

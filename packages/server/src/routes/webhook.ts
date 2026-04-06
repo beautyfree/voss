@@ -20,12 +20,33 @@ import { removeTraefikConfig } from "../services/traefik";
 const WEBHOOK_SECRET = process.env.VOSS_API_KEY ?? "";
 
 export const webhookRoutes = new Elysia({ prefix: "/api/webhook" })
-  // GitHub push/PR webhook — public endpoint (validated by secret)
-  .post("/github", async ({ body, headers }) => {
+  // GitHub push/PR webhook — public endpoint (validated by HMAC)
+  .post("/github", async ({ body, headers, request }) => {
     const event = headers["x-github-event"];
+    const signature = headers["x-hub-signature-256"];
     const payload = body as any;
 
-    // TODO: proper HMAC signature validation
+    // HMAC-SHA256 signature validation
+    if (WEBHOOK_SECRET) {
+      const rawBody = JSON.stringify(body);
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(WEBHOOK_SECRET),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      );
+      const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+      const expected = "sha256=" + Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+      if (!signature || expected !== signature) {
+        console.log("[webhook] Invalid signature");
+        return new Response(
+          JSON.stringify({ code: "UNAUTHORIZED", message: "Invalid signature" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     if (event === "push") {
       return handlePush(payload);
