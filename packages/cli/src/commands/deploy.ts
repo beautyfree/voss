@@ -4,11 +4,13 @@ import { join, relative } from "path";
 import { existsSync, readFileSync } from "fs";
 import { requireCredentials, api } from "../lib/credentials";
 import { detectFramework, parseConfig, RUNNERS, type VossConfig } from "@voss/shared";
+import { bold, cyan, dim, green, red, yellow, icon, elapsed, Spinner, kv } from "../ui/style";
 
 export default async function deploy(args: string[]) {
   const verbose = args.includes("--verbose") || args.includes("-v");
   const creds = requireCredentials();
   const projectDir = process.cwd();
+  const deployStart = Date.now();
 
   // 1. Load or detect config
   const config = await loadConfig(projectDir);
@@ -16,10 +18,12 @@ export default async function deploy(args: string[]) {
   config.framework = framework;
   const runner = RUNNERS[framework];
 
-  console.log(`  Detected: ${framework} (${runner.detectFiles[0] ?? "package.json"})`);
+  console.log();
+  console.log(`  Detected: ${cyan(framework)} ${dim(`(${runner.detectFiles[0] ?? "package.json"})`)}`);
 
   // 2. Hash files for dedup
-  console.log("  Hashing files...");
+  const spinner = new Spinner("Hashing files...");
+  spinner.start();
   const files = await listFiles(projectDir);
   const manifest: Record<string, string> = {};
 
@@ -31,6 +35,7 @@ export default async function deploy(args: string[]) {
   }
 
   // 3. Send manifest, get missing files
+  spinner.stop();
   const manifestResp = await api(creds, "/api/deploy/manifest", {
     method: "POST",
     body: JSON.stringify({
@@ -43,7 +48,7 @@ export default async function deploy(args: string[]) {
   const manifestResult = await manifestResp.json() as any;
 
   if (!manifestResp.ok) {
-    console.error(`  ✕ ${manifestResult.message ?? "Manifest upload failed"}`);
+    console.error(`  ${icon.error} ${manifestResult.message ?? "Manifest upload failed"}`);
     process.exit(1);
   }
 
@@ -52,7 +57,8 @@ export default async function deploy(args: string[]) {
   // 4. Upload changed files as tar
   const changedCount = missing.length;
   const totalCount = Object.keys(manifest).length;
-  console.log(`  Uploading: ${totalCount} files (${changedCount} changed, ${totalCount - changedCount} cached)`);
+  const cachedCount = totalCount - changedCount;
+  console.log(`  Uploading: ${bold(String(totalCount))} files ${dim(`(${changedCount} changed, ${cachedCount} cached)`)}`);
 
   // Create tar of all files using file list (avoids arg length limits)
   const fileListPath = join(projectDir, ".voss-files.txt");
@@ -72,7 +78,7 @@ export default async function deploy(args: string[]) {
   try { await Bun.file(fileListPath).delete(); } catch {}
 
   if (tarProc.exitCode !== 0) {
-    console.error(`  ✕ tar failed: ${tarStderr}`);
+    console.error(`  ${icon.error} tar failed: ${tarStderr}`);
     process.exit(1);
   }
 
@@ -89,19 +95,19 @@ export default async function deploy(args: string[]) {
       headers: { "Content-Type": "application/octet-stream" },
     });
   } catch (err) {
-    console.error(`  ✕ Upload failed: ${(err as Error).message}`);
+    console.error(`  ${icon.error} Upload failed: ${(err as Error).message}`);
     if (verbose) console.error(`    ${err}`);
     process.exit(1);
   }
 
   if (!uploadResp.ok) {
     const errText = await uploadResp.text();
-    console.error(`  ✕ Upload failed (${uploadResp.status}): ${errText}`);
+    console.error(`  ${icon.error} Upload failed ${dim(`(${uploadResp.status})`)}: ${errText}`);
     process.exit(1);
   }
 
   // 5. Start deploy
-  console.log("  Building...");
+  let buildSpinner = new Spinner("Building...");
   const deployResp = await api(creds, "/api/deploy/start", {
     method: "POST",
     body: JSON.stringify({ projectName: config.name, config }),
@@ -110,11 +116,12 @@ export default async function deploy(args: string[]) {
   const deployResult = await deployResp.json() as any;
 
   if (!deployResp.ok) {
-    console.error(`  ✕ Deploy failed: ${deployResult.message ?? "Unknown error"}`);
+    console.error(`  ${icon.error} Deploy failed: ${deployResult.message ?? "Unknown error"}`);
     process.exit(1);
   }
 
   const deploy = deployResult.data;
+  buildSpinner.start();
 
   // 6. Stream logs via WebSocket, fall back to polling
   const wsUrl = creds.serverUrl.replace("https://", "wss://").replace("http://", "ws://");
@@ -136,14 +143,23 @@ export default async function deploy(args: string[]) {
         try {
           const msg = JSON.parse(event.data as string);
           if (msg.type === "log") {
-            console.log(`    ${msg.data}`);
+            buildSpinner.stop();
+            console.log(`    ${dim(">")} ${msg.data}`);
           } else if (msg.type === "status") {
-            if (msg.status === "live") {
+            if (msg.status === "building") {
+              buildSpinner.update("Building...");
+            } else if (msg.status === "health_checking") {
+              buildSpinner.stop();
+              buildSpinner = new Spinner("Health check...");
+              buildSpinner.start();
+            } else if (msg.status === "live") {
+              buildSpinner.stop();
               resolved = true;
               clearTimeout(timeout);
               ws.close();
               resolve();
             } else if (msg.status === "failed") {
+              buildSpinner.stop();
               resolved = true;
               clearTimeout(timeout);
               ws.close();
@@ -157,6 +173,7 @@ export default async function deploy(args: string[]) {
 
       ws.onerror = () => {
         if (!resolved) {
+          buildSpinner.stop();
           ws.close();
           reject(new Error("ws_error"));
         }
@@ -169,40 +186,54 @@ export default async function deploy(args: string[]) {
       };
     });
 
-    console.log(`  ✓ https://${config.name}.${process.env.VOSS_DOMAIN ?? "yourdomain.com"}`);
+    // Success
+    const domain = config.name; // TODO: show real domain if configured
+    console.log(`  ${icon.success} Health check passed ${elapsed(deployStart)}`);
+    console.log();
+    console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(`https://${domain}`)}`);
+    console.log();
   } catch (err) {
     const msg = (err as Error).message;
 
     if (msg === "failed") {
-      console.error("  ✕ Deploy failed");
-      console.error(`    Full log: voss logs --deploy ${deploy.deploymentId}`);
+      buildSpinner.stop();
+      console.error(`  ${icon.error} ${red("Deploy failed")}`);
+      console.error(`    ${dim("Full log:")} voss logs --deploy ${deploy.deploymentId}`);
       process.exit(1);
     }
 
     // WebSocket failed, fall back to polling
     if (msg === "ws_error" || msg === "ws_closed") {
-      console.log("    (streaming unavailable, polling...)");
-    }
+      buildSpinner.stop();
+      const pollSpinner = new Spinner("Deploying...");
+      pollSpinner.start();
 
-    let lastStatus = "";
-    while (true) {
-      const statusResp = await api(creds, `/api/deployments/${deploy.deploymentId}`);
-      const { data: d } = await statusResp.json() as any;
+      let lastStatus = "";
+      while (true) {
+        const statusResp = await api(creds, `/api/deployments/${deploy.deploymentId}`);
+        const { data: d } = await statusResp.json() as any;
 
-      if (d.status !== lastStatus) {
-        lastStatus = d.status;
-        if (d.status === "live") {
-          console.log(`  Health check: ● passed`);
-          console.log(`  ✓ https://${config.name}.${process.env.VOSS_DOMAIN ?? "yourdomain.com"}`);
-          return;
+        if (d.status !== lastStatus) {
+          lastStatus = d.status;
+          if (d.status === "building") pollSpinner.update("Building...");
+          if (d.status === "health_checking") pollSpinner.update("Health check...");
+          if (d.status === "live") {
+            pollSpinner.stop();
+            console.log(`  ${icon.success} Health check passed ${elapsed(deployStart)}`);
+            console.log();
+            console.log(`  ${icon.success} ${bold("Deployed")} ${icon.arrow} ${cyan(`https://${config.name}`)}`);
+            console.log();
+            return;
+          }
+          if (d.status === "failed") {
+            pollSpinner.stop();
+            console.error(`  ${icon.error} ${red("Deploy failed")}`);
+            console.error(`    ${dim("Full log:")} voss logs --deploy ${deploy.deploymentId}`);
+            process.exit(1);
+          }
         }
-        if (d.status === "failed") {
-          console.error("  ✕ Deploy failed");
-          console.error(`    Full log: voss logs --deploy ${deploy.deploymentId}`);
-          process.exit(1);
-        }
+        await Bun.sleep(2000);
       }
-      await Bun.sleep(2000);
     }
   }
 }

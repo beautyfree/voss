@@ -1,16 +1,16 @@
 import { requireCredentials, api } from "../lib/credentials";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { bold, cyan, dim, green, red, yellow, icon, kv } from "../ui/style";
 
 export default async function status(args: string[]) {
   const creds = requireCredentials();
 
-  // Get project name from voss.json or directory name
   const configPath = join(process.cwd(), "voss.json");
   let projectName: string;
 
   if (existsSync(configPath)) {
-    const config = JSON.parse(await Bun.file(configPath).text());
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
     projectName = config.name;
   } else {
     projectName = process.cwd().split("/").pop() ?? "app";
@@ -20,29 +20,36 @@ export default async function status(args: string[]) {
 
   if (!resp.ok) {
     if (resp.status === 404) {
-      console.log(`  Project '${projectName}' not deployed yet.`);
-      console.log("  Run: voss deploy");
+      console.log();
+      console.log(`  ${dim("Project")} ${bold(projectName)} ${dim("not deployed yet.")}`);
+      console.log(`  Run: ${cyan("voss deploy")}`);
+      console.log();
       return;
     }
     const err = await resp.json();
-    console.error(`  ✕ ${(err as any).message}`);
+    console.error(`  ${icon.error} ${(err as any).message}`);
     process.exit(1);
   }
 
   const { data } = await resp.json() as any;
 
-  console.log(`  Project:   ${data.name}`);
-  console.log(`  Framework: ${data.framework}`);
-  console.log(`  Domain:    ${data.domain ?? "not set"}`);
+  console.log();
+  kv("Project", bold(data.name));
+  kv("Framework", cyan(data.framework));
+  kv("Domain", data.domain ?? dim("not set"));
 
   if (data.latestDeployment) {
     const d = data.latestDeployment;
-    const status = d.status === "live" ? "● live" : d.status === "failed" ? "✕ failed" : `○ ${d.status}`;
-    const ago = timeAgo(d.createdAt);
-    console.log(`  Status:    ${status}`);
-    console.log(`  Deployed:  ${ago}`);
-    if (d.branch) console.log(`  Branch:    ${d.branch}`);
+    const statusText = d.status === "live"
+      ? `${icon.live} ${green("live")}`
+      : d.status === "failed"
+        ? `${icon.error} ${red("failed")}`
+        : `${icon.building} ${yellow(d.status)}`;
+    kv("Status", statusText);
+    kv("Deployed", dim(timeAgo(d.createdAt)));
+    if (d.branch) kv("Branch", d.branch);
   }
+  console.log();
 }
 
 function timeAgo(iso: string): string {
