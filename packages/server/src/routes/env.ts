@@ -8,12 +8,12 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
     const project = db
       .select()
       .from(schema.projects)
-      .where(eq(schema.projects.name, params.projectName))
+      .where(eq(schema.projects.name, params.name))
       .get();
 
     if (!project) {
       return new Response(
-        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.projectName}' not found` }),
+        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.name}' not found` }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -38,12 +38,12 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
     const project = db
       .select()
       .from(schema.projects)
-      .where(eq(schema.projects.name, params.projectName))
+      .where(eq(schema.projects.name, params.name))
       .get();
 
     if (!project) {
       return new Response(
-        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.projectName}' not found` }),
+        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.name}' not found` }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -69,12 +69,12 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
     const project = db
       .select()
       .from(schema.projects)
-      .where(eq(schema.projects.name, params.projectName))
+      .where(eq(schema.projects.name, params.name))
       .get();
 
     if (!project) {
       return new Response(
-        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.projectName}' not found` }),
+        JSON.stringify({ code: "NOT_FOUND", message: `Project '${params.name}' not found` }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
