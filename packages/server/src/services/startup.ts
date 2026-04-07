@@ -1,5 +1,7 @@
 import { $ } from "bun";
 import { DOCKER_NETWORK_RUNNER, DOCKER_NETWORK_INTERNAL } from "@voss/shared";
+import { getDb, schema } from "../db";
+import { eq } from "drizzle-orm";
 
 /**
  * Verify that all required dependencies are running before starting the server.
@@ -56,6 +58,29 @@ export async function checkDependencies() {
     }
   } catch {
     // Ignore — non-critical
+  }
+
+  // Mark stale builds as failed (server may have restarted mid-build)
+  try {
+    const db = getDb();
+    const stale = db.select().from(schema.deployments)
+      .where(eq(schema.deployments.status, "building")).all()
+      .concat(db.select().from(schema.deployments)
+        .where(eq(schema.deployments.status, "deploying")).all())
+      .concat(db.select().from(schema.deployments)
+        .where(eq(schema.deployments.status, "health_checking")).all());
+
+    if (stale.length > 0) {
+      console.log(`  ⚠ Found ${stale.length} stale build(s) from previous run, marking as failed`);
+      for (const d of stale) {
+        db.update(schema.deployments)
+          .set({ status: "failed", finishedAt: new Date().toISOString() })
+          .where(eq(schema.deployments.id, d.id))
+          .run();
+      }
+    }
+  } catch (e) {
+    console.error("  ⚠ Could not check stale builds:", (e as Error).message);
   }
 
   console.log("All checks passed.\n");

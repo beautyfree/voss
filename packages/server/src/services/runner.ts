@@ -93,6 +93,7 @@ export async function runContainer(opts: RunContainerOpts): Promise<RunResult> {
   const entrypoint = `cd /app && ${pmPrefix}${buildCmd} && cd ${startDir} && ${finalStartCmd}`;
 
   // Persistent cache volume for node_modules — speeds up rebuilds
+  // Safe from races: build queue serializes deploys (max 1 concurrent)
   const cacheDir = `${VOSS_DATA_DIR}/cache/${opts.projectName}/node_modules`;
   await $`mkdir -p ${cacheDir}`;
 
@@ -251,16 +252,20 @@ export async function healthCheck(
   return false;
 }
 
+export interface LogProcess {
+  kill(): void;
+}
+
 /**
- * Stream container logs to a file and return the path.
+ * Stream container logs to a file. Returns handle to kill the process.
  */
-export async function streamLogs(
+export function streamLogs(
   containerName: string,
   logPath: string,
-): Promise<void> {
+): LogProcess {
   const proc = Bun.spawn(["docker", "logs", "-f", containerName], {
     stdout: Bun.file(logPath),
     stderr: Bun.file(logPath),
   });
-  // Don't await — this runs in background
+  return { kill: () => { try { proc.kill(); } catch {} } };
 }

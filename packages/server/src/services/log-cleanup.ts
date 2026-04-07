@@ -38,7 +38,7 @@ async function runCleanup() {
         if (d.logPath && existsSync(d.logPath)) {
           try {
             await unlink(d.logPath);
-          } catch {}
+          } catch (e) { console.error(`[cleanup] Failed to delete log ${d.logPath}:`, (e as Error).message); }
         }
       }
     }
@@ -55,7 +55,7 @@ async function runCleanup() {
               .set({ status: "rolled_back" })
               .where(eq(schema.deployments.id, d.id))
               .run();
-          } catch {}
+          } catch (e) { console.error(`[cleanup] Failed to stop container ${d.containerName}:`, (e as Error).message); }
         }
       }
     }
@@ -64,7 +64,7 @@ async function runCleanup() {
   // Prune dangling Docker images
   try {
     await $`docker image prune -f`.quiet();
-  } catch {}
+  } catch (e) { console.error("[cleanup] Docker prune failed:", (e as Error).message); }
 
   console.log("[cleanup] Done.");
 }

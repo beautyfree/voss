@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
-import { runContainer, healthCheck, stopContainer, streamLogs } from "../services/runner";
+import { runContainer, healthCheck, stopContainer, streamLogs, type LogProcess } from "../services/runner";
 import {
   RUNNERS,
   VOSS_UPLOADS_DIR,
@@ -11,6 +11,7 @@ import {
   CONTAINER_KEEP_COUNT,
   detectFramework,
   parseConfig,
+  validateProjectName,
   type VossConfig,
   type DeploymentStatus,
 } from "@voss/shared";
@@ -110,6 +111,14 @@ export const deployRoutes = new Elysia({ prefix: "/api" })
   // Trigger deploy
   .post("/deploy/start", async ({ body }) => {
     const { projectName, config: rawConfig, preview, branch } = body;
+
+    const nameErr = validateProjectName(projectName);
+    if (nameErr) {
+      return new Response(
+        JSON.stringify({ code: "INVALID_CONFIG", message: nameErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const db = getDb();
     const config = parseConfig(rawConfig);
@@ -413,6 +422,8 @@ export async function deployInBackground(
 ) {
   const db = getDb();
   const framework = config.framework ?? "unknown";
+  let containerName: string | undefined;
+  let logProc: LogProcess | undefined;
 
   try {
     // Wait for build slot
@@ -425,7 +436,7 @@ export async function deployInBackground(
     // Start container
     updateStatus(deploymentId, "deploying");
     broadcastLog(deploymentId, "Starting container...");
-    const { containerId, containerName } = await runContainer({
+    const result = await runContainer({
       projectName,
       deploymentId,
       framework,
@@ -433,16 +444,17 @@ export async function deployInBackground(
       envVars,
       uploadDir,
     });
+    containerName = result.containerName;
 
     // Update deployment with container info
     db.update(schema.deployments)
-      .set({ containerId, containerName })
+      .set({ containerId: result.containerId, containerName })
       .where(eq(schema.deployments.id, deploymentId))
       .run();
 
-    // Stream logs
+    // Stream logs (keep reference to kill later)
     const logPath = `${VOSS_LOG_DIR}/${projectName}/${deploymentId}.log`;
-    streamLogs(containerName, logPath);
+    logProc = streamLogs(containerName, logPath);
 
     // Health check
     updateStatus(deploymentId, "health_checking");
@@ -579,8 +591,18 @@ export async function deployInBackground(
     if (isPreview && prNumber) {
       postPreviewComment(projectId, prNumber, "", deploymentId, "failed");
     }
+    // Clean up container if it was started
+    if (containerName) {
+      try { await stopContainer(containerName); } catch (e) { console.error(`[cleanup] Failed to stop ${containerName}:`, e); }
+    }
     console.error(`Deploy ${deploymentId} failed:`, err);
   } finally {
+    // Kill log streaming process to prevent FD leak
+    if (logProc) {
+      try { logProc.kill(); } catch (e) { console.error("[cleanup] Failed to kill log process:", e); }
+    }
+    // Clean up log subscribers for this deployment
+    logSubscribers.delete(deploymentId);
     releaseBuildSlot();
   }
 }

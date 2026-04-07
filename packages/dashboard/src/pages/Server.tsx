@@ -22,15 +22,28 @@ export function Server() {
   const [health, setHealth] = useState<any>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
       api("/api/health").then(setHealth),
       api<Stats>("/api/stats").then(setStats),
     ])
-      .catch(() => {})
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  if (error) {
+    return (
+      <div>
+        <div className="page-header"><h1 className="page-title">Server</h1></div>
+        <div className="empty">
+          <div className="empty-title">Could not connect to server</div>
+          <p style={{ color: "var(--muted)", fontSize: 13 }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

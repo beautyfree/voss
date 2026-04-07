@@ -90,7 +90,7 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
       .where(eq(schema.deployments.projectId, project.id)).all();
     for (const d of deploys) {
       if (d.containerName) {
-        try { await stopContainer(d.containerName); } catch {}
+        try { await stopContainer(d.containerName); } catch (e) { console.error(`[delete] Failed to stop ${d.containerName}:`, (e as Error).message); }
       }
     }
 
@@ -98,14 +98,14 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
     const aliases = db.select().from(schema.aliases)
       .where(eq(schema.aliases.projectId, project.id)).all();
     for (const a of aliases) {
-      try { await removeTraefikConfig(a.subdomain); } catch {}
+      try { await removeTraefikConfig(a.subdomain); } catch (e) { console.error(`[delete] Failed to remove traefik ${a.subdomain}:`, (e as Error).message); }
     }
-    try { await removeTraefikConfig(project.name); } catch {}
+    try { await removeTraefikConfig(project.name); } catch (e) { console.error(`[delete] Failed to remove traefik ${project.name}:`, (e as Error).message); }
 
     // Delete files: logs, uploads, cache
-    try { await $`rm -rf ${VOSS_LOG_DIR}/${project.name}`.quiet(); } catch {}
-    try { await $`rm -rf ${VOSS_UPLOADS_DIR}/${project.name}`.quiet(); } catch {}
-    try { await $`rm -rf ${VOSS_DATA_DIR}/cache/${project.name}`.quiet(); } catch {}
+    try { await $`rm -rf ${VOSS_LOG_DIR}/${project.name}`.quiet(); } catch (e) { console.error("[delete] Failed to clean logs:", (e as Error).message); }
+    try { await $`rm -rf ${VOSS_UPLOADS_DIR}/${project.name}`.quiet(); } catch (e) { console.error("[delete] Failed to clean uploads:", (e as Error).message); }
+    try { await $`rm -rf ${VOSS_DATA_DIR}/cache/${project.name}`.quiet(); } catch (e) { console.error("[delete] Failed to clean cache:", (e as Error).message); }
 
     // Clean DB (order matters for foreign keys)
     db.delete(schema.events).where(eq(schema.events.projectId, project.id)).run();

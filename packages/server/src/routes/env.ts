@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { logEvent } from "../services/events";
+import { validateEnvKey } from "@voss/shared";
 
 export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
   .get("/", ({ params }) => {
@@ -35,6 +36,14 @@ export const envRoutes = new Elysia({ prefix: "/api/projects/:name/env" })
     };
   })
   .post("/", ({ params, body }) => {
+    const keyErr = validateEnvKey(body.key);
+    if (keyErr) {
+      return new Response(
+        JSON.stringify({ code: "INVALID_CONFIG", message: keyErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const db = getDb();
     const project = db
       .select()

@@ -1,6 +1,6 @@
 import { mkdir, writeFile, readdir, unlink } from "fs/promises";
 import { join } from "path";
-import { VOSS_TRAEFIK_DYNAMIC_DIR } from "@voss/shared";
+import { VOSS_TRAEFIK_DYNAMIC_DIR, validateHostname } from "@voss/shared";
 import { getDb, schema } from "../db";
 import { eq } from "drizzle-orm";
 
@@ -28,7 +28,8 @@ export async function updateTraefikConfig(route: TraefikRoute): Promise<void> {
   ];
 
   const isIpDomain = /^\d+\.\d+\.\d+\.\d+$/.test(DOMAIN);
-  const realDomains = route.domains.filter(Boolean);
+  // Validate all domains before writing YAML to prevent injection
+  const realDomains = route.domains.filter(Boolean).filter((h) => !validateHostname(h));
   const hasRealDomains = realDomains.length > 0;
 
   let routers = "";

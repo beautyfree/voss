@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { updateTraefikConfig } from "../services/traefik";
-import { RUNNERS } from "@voss/shared";
+import { RUNNERS, validateHostname } from "@voss/shared";
 
 export const domainRoutes = new Elysia({ prefix: "/api/projects/:name/domains" })
   .get("/", ({ params }) => {
@@ -29,6 +29,11 @@ export const domainRoutes = new Elysia({ prefix: "/api/projects/:name/domains" }
   .post("/", async ({ params, body }) => {
     const db = getDb();
     const { hostname } = body;
+
+    const hostnameErr = validateHostname(hostname);
+    if (hostnameErr) {
+      return Response.json({ code: "INVALID_CONFIG", message: hostnameErr }, { status: 400 });
+    }
 
     const project = db
       .select()

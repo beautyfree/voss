@@ -58,6 +58,7 @@ export function ProjectDetail() {
   const [events, setEvents] = useState<Event[]>([]);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
@@ -95,7 +96,7 @@ export function ProjectDetail() {
         setEnvVars(ev);
         setEvents(act);
       })
-      .catch(() => {})
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [name]);
 
@@ -251,6 +252,16 @@ export function ProjectDetail() {
             <div className="skeleton" style={{ width: "100%", height: 18 }} />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="empty">
+        <div className="empty-title">Could not load project</div>
+        <p style={{ color: "var(--muted)", fontSize: 13 }}>{error}</p>
+        <Link to="/">Back to projects</Link>
       </div>
     );
   }

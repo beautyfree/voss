@@ -28,7 +28,7 @@ export const healthRoutes = new Elysia({ prefix: "/api" })
         const d = await $`df -h / | tail -1`.text();
         const parts = d.trim().split(/\s+/);
         disk = { size: parts[1], used: parts[2], avail: parts[3], percent: parts[4] };
-      } catch {}
+      } catch (e) { console.error("[stats] Disk check failed:", (e as Error).message); }
 
       return {
         data: {
