@@ -1,11 +1,12 @@
 import { getDb, schema } from "../db";
 import { eq, desc } from "drizzle-orm";
-import { VOSS_LOG_DIR, LOG_KEEP_COUNT, CONTAINER_KEEP_COUNT } from "@voss/shared";
+import { VOSS_LOG_DIR, VOSS_DB_BACKUP_DIR, LOG_KEEP_COUNT, CONTAINER_KEEP_COUNT } from "@voss/shared";
 import { $ } from "bun";
 import { existsSync } from "fs";
 import { readdir, unlink, rmdir } from "fs/promises";
 import { join } from "path";
 import { stopContainer } from "./runner";
+import { listVolumes } from "./docker-utils";
 
 const CLEANUP_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -65,6 +66,50 @@ async function runCleanup() {
   try {
     await $`docker image prune -f`.quiet();
   } catch (e) { console.error("[cleanup] Docker prune failed:", (e as Error).message); }
+
+  // Prune orphaned voss-vol-* Docker volumes
+  try {
+    const volumes = await listVolumes("voss-vol-");
+    const db2 = getDb();
+    const knownVolumes = new Set(
+      db2.select().from(schema.services).all()
+        .map(s => s.volumePath)
+        .filter(Boolean)
+    );
+    // Also keep shared volumes
+    knownVolumes.add("voss-vol-shared-postgres");
+    knownVolumes.add("voss-vol-shared-redis");
+
+    for (const vol of volumes) {
+      if (!knownVolumes.has(vol)) {
+        try {
+          await $`docker volume rm ${vol}`.quiet();
+          console.log(`[cleanup] Removed orphaned volume: ${vol}`);
+        } catch (e) { console.error(`[cleanup] Failed to remove volume ${vol}:`, (e as Error).message); }
+      }
+    }
+  } catch (e) { console.error("[cleanup] Volume prune failed:", (e as Error).message); }
+
+  // Prune old backup files (keep last 5 per service)
+  try {
+    const db3 = getDb();
+    const allServices = db3.select().from(schema.services).all();
+    for (const svc of allServices) {
+      const backups = db3.select().from(schema.serviceBackups)
+        .where(eq(schema.serviceBackups.serviceId, svc.id))
+        .orderBy(desc(schema.serviceBackups.createdAt))
+        .all();
+      if (backups.length > 5) {
+        const old = backups.slice(5);
+        for (const b of old) {
+          try { await $`rm -f ${b.filePath}`.quiet(); } catch {}
+          db3.delete(schema.serviceBackups)
+            .where(eq(schema.serviceBackups.id, b.id)).run();
+        }
+        console.log(`[cleanup] Pruned ${old.length} old backups for service ${svc.id.slice(0, 8)}`);
+      }
+    }
+  } catch (e) { console.error("[cleanup] Backup prune failed:", (e as Error).message); }
 
   console.log("[cleanup] Done.");
 }

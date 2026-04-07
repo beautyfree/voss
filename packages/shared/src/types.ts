@@ -90,6 +90,50 @@ export interface VossConfig {
     path?: string;
     timeout?: number;
   };
+  services?: {
+    postgres?: ServiceConfig | boolean;
+    redis?: ServiceConfig | boolean;
+  };
+}
+
+// ── Database services ──
+
+export type ServiceType = "postgres" | "redis";
+export type ServiceTier = "shared" | "isolated" | "external";
+export type ServiceProvider = "neon" | "supabase" | "planetscale" | "upstash" | "turso";
+
+export interface ServiceConfig {
+  version?: string;
+  tier?: "shared" | "isolated";
+  memory?: string;
+  maxConnections?: number;
+}
+
+export interface Service {
+  id: string;
+  projectId: string | null;
+  type: ServiceType;
+  tier: ServiceTier;
+  provider: ServiceProvider | null;
+  version: string | null;
+  containerName: string | null;
+  containerStatus: "running" | "stopped" | "error";
+  dbName: string | null;
+  envKey: string | null;
+  volumePath: string | null;
+  port: number | null;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServiceBackup {
+  id: string;
+  serviceId: string;
+  filePath: string;
+  sizeBytes: number | null;
+  type: "manual" | "scheduled" | "pre-delete";
+  createdAt: string;
 }
 
 // ── API errors ──

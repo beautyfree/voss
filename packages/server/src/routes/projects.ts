@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { stopContainer } from "../services/runner";
 import { removeTraefikConfig } from "../services/traefik";
+import { deleteProjectServices } from "../services/db-manager";
 import { VOSS_LOG_DIR, VOSS_UPLOADS_DIR, VOSS_DATA_DIR } from "@voss/shared";
 import { $ } from "bun";
 
@@ -101,6 +102,9 @@ export const projectRoutes = new Elysia({ prefix: "/api/projects" })
       try { await removeTraefikConfig(a.subdomain); } catch (e) { console.error(`[delete] Failed to remove traefik ${a.subdomain}:`, (e as Error).message); }
     }
     try { await removeTraefikConfig(project.name); } catch (e) { console.error(`[delete] Failed to remove traefik ${project.name}:`, (e as Error).message); }
+
+    // Delete database services (auto-backup before delete)
+    try { await deleteProjectServices(project.id); } catch (e) { console.error("[delete] Failed to clean services:", (e as Error).message); }
 
     // Delete files: logs, uploads, cache
     try { await $`rm -rf ${VOSS_LOG_DIR}/${project.name}`.quiet(); } catch (e) { console.error("[delete] Failed to clean logs:", (e as Error).message); }

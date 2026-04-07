@@ -22,6 +22,7 @@ import { existsSync } from "fs";
 import { logEvent } from "../services/events";
 import { notifyDeploy } from "../services/notify";
 import { postPreviewComment } from "../services/github";
+import { ensureServicesForProject } from "../services/db-manager";
 
 // ── WebSocket log subscribers ──
 const logSubscribers = new Map<string, Set<(msg: string) => void>>();
@@ -426,6 +427,29 @@ export async function deployInBackground(
   let logProc: LogProcess | undefined;
 
   try {
+    // Provision database services BEFORE acquiring build slot (separate lock)
+    if (config.services) {
+      broadcastLog(deploymentId, "Provisioning database services...");
+      try {
+        const serviceEnvVars = await ensureServicesForProject(projectName, projectId, config);
+        Object.assign(envVars, serviceEnvVars);
+        if (Object.keys(serviceEnvVars).length > 0) {
+          // Update snapshot with merged env vars
+          const db = getDb();
+          db.update(schema.deployments)
+            .set({ envVarsSnapshot: JSON.stringify(envVars) })
+            .where(eq(schema.deployments.id, deploymentId))
+            .run();
+          broadcastLog(deploymentId, `  ✓ Database services ready (${Object.keys(serviceEnvVars).join(", ")})`);
+        }
+      } catch (e) {
+        updateStatus(deploymentId, "failed");
+        broadcastLog(deploymentId, `✕ Database provisioning failed: ${(e as Error).message}`);
+        logEvent(projectId, "deploy_failed", `DB provisioning failed: ${(e as Error).message}`, { deploymentId });
+        return;
+      }
+    }
+
     // Wait for build slot
     await acquireBuildSlot();
     updateStatus(deploymentId, "building");

@@ -43,6 +43,19 @@ interface Event {
   createdAt: string;
 }
 
+interface ServiceData {
+  id: string;
+  type: string;
+  tier: string;
+  provider: string | null;
+  version: string | null;
+  containerName: string | null;
+  containerStatus: string;
+  dbName: string | null;
+  envKey: string | null;
+  createdAt: string;
+}
+
 interface LogMessage {
   type: "log" | "status";
   data?: string;
@@ -55,6 +68,7 @@ export function ProjectDetail() {
   const [deploys, setDeploys] = useState<Deployment[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [services, setServices] = useState<ServiceData[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
@@ -88,13 +102,15 @@ export function ProjectDetail() {
       api<Domain[]>(`/api/projects/${name}/domains/`),
       api<EnvVar[]>(`/api/projects/${name}/env/`),
       api<Event[]>(`/api/projects/${name}/events/`),
+      api<ServiceData[]>(`/api/projects/${name}/services`),
     ])
-      .then(([p, d, dm, ev, act]) => {
+      .then(([p, d, dm, ev, act, svc]) => {
         setProject(p);
         setDeploys(d);
         setDomains(dm);
         setEnvVars(ev);
         setEvents(act);
+        setServices(svc);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -275,7 +291,44 @@ export function ProjectDetail() {
     );
   }
 
-  const tabs = ["overview", "deployments", "environment", "domains", "activity"];
+  const [svcType, setSvcType] = useState<"postgres" | "redis">("postgres");
+  const [svcTier, setSvcTier] = useState<"shared" | "isolated">("shared");
+  const [svcSaving, setSvcSaving] = useState(false);
+
+  async function addService() {
+    if (!name || svcSaving) return;
+    setSvcSaving(true);
+    try {
+      await api(`/api/projects/${name}/services`, {
+        method: "POST",
+        body: JSON.stringify({ type: svcType, tier: svcTier }),
+      });
+      setServices(await api<ServiceData[]>(`/api/projects/${name}/services`));
+      setEnvVars(await api<EnvVar[]>(`/api/projects/${name}/env/`));
+      toast(`Created ${svcTier} ${svcType}`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
+    setSvcSaving(false);
+  }
+
+  async function deleteServiceById(serviceId: string) {
+    if (!name) return;
+    try {
+      await api(`/api/projects/${name}/services/${serviceId}`, { method: "DELETE" });
+      setServices((prev) => prev.filter((s) => s.id !== serviceId));
+      setEnvVars(await api<EnvVar[]>(`/api/projects/${name}/env/`));
+      toast("Service deleted", "success");
+    } catch { toast("Failed to delete service", "error"); }
+  }
+
+  async function backupServiceById(serviceId: string) {
+    if (!name) return;
+    try {
+      await api(`/api/projects/${name}/services/${serviceId}/backup`, { method: "POST" });
+      toast("Backup created", "success");
+    } catch { toast("Backup failed", "error"); }
+  }
+
+  const tabs = ["overview", "deployments", "environment", "databases", "domains", "activity"];
 
   return (
     <div>
@@ -408,6 +461,57 @@ export function ProjectDetail() {
             ))
           )}
           <p className="env-hint">Variables are injected at deploy time. Changes take effect on next deploy.</p>
+        </div>
+      )}
+
+      {tab === "databases" && (
+        <div>
+          <div className="env-form">
+            <select className="input" value={svcType} onChange={(e) => setSvcType(e.target.value as any)}>
+              <option value="postgres">PostgreSQL</option>
+              <option value="redis">Redis</option>
+            </select>
+            <select className="input" value={svcTier} onChange={(e) => setSvcTier(e.target.value as any)}>
+              <option value="shared">Shared</option>
+              <option value="isolated">Isolated</option>
+            </select>
+            <button className="btn btn-primary btn-sm" onClick={addService} disabled={svcSaving}>
+              {svcSaving ? "Creating..." : "Add database"}
+            </button>
+          </div>
+          {!services.length ? (
+            <div className="empty">
+              <div className="empty-title">No databases</div>
+              <p style={{ color: "var(--muted)", fontSize: 13 }}>
+                Add a database above or via CLI: <code className="empty-code" style={{ display: "inline", padding: "2px 8px" }}>voss db create</code>
+              </p>
+              <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
+                Or add <code style={{ background: "var(--border)", padding: "1px 4px", borderRadius: 3 }}>"services": {"{"} "postgres": true {"}"}</code> to voss.json for auto-provisioning on deploy.
+              </p>
+            </div>
+          ) : (
+            services.map((s) => (
+              <div key={s.id} className="row">
+                <span className="row-name">
+                  <span className={`dot ${s.containerStatus === "running" ? "dot-live" : "dot-pending"}`} />
+                  {" "}{s.type}
+                </span>
+                <span className="badge" style={{ background: s.tier === "shared" ? "var(--accent)" : s.tier === "isolated" ? "#2563eb" : "#7c3aed", color: "#fff", fontSize: 11, padding: "1px 6px", borderRadius: 4 }}>
+                  {s.tier}{s.provider ? ` (${s.provider})` : ""}
+                </span>
+                {s.version && <span className="row-meta">v{s.version}</span>}
+                {s.envKey && <span className="row-meta mono" style={{ fontSize: 11 }}>{s.envKey}</span>}
+                <span style={{ flex: 1 }} />
+                {s.tier !== "external" && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => backupServiceById(s.id)}>Backup</button>
+                )}
+                <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteServiceById(s.id)}>Delete</button>
+              </div>
+            ))
+          )}
+          <p className="env-hint">
+            Shared databases use a single container for all projects. Isolated databases get their own container and volume.
+          </p>
         </div>
       )}
 

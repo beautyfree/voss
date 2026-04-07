@@ -63,3 +63,30 @@ export const domains = sqliteTable("domains", {
   sslStatus: text("ssl_status").notNull().default("pending"),
   createdAt: text("created_at").notNull().default(""),
 });
+
+export const services = sqliteTable("services", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").references(() => projects.id),
+  type: text("type").notNull(), // "postgres" | "redis"
+  tier: text("tier").notNull(), // "shared" | "isolated" | "external"
+  provider: text("provider"), // null | "neon" | "supabase" | "planetscale" | "upstash" | "turso"
+  version: text("version"),
+  containerName: text("container_name"),
+  containerStatus: text("container_status").notNull().default("stopped"),
+  dbName: text("db_name"), // database name within shared instance
+  envKey: text("env_key"), // "DATABASE_URL" | "REDIS_URL"
+  volumePath: text("volume_path"), // Docker volume name
+  port: integer("port"),
+  config: text("config").notNull().default("{}"), // JSON
+  createdAt: text("created_at").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(""),
+});
+
+export const serviceBackups = sqliteTable("service_backups", {
+  id: text("id").primaryKey(),
+  serviceId: text("service_id").notNull().references(() => services.id),
+  filePath: text("file_path").notNull(),
+  sizeBytes: integer("size_bytes"),
+  type: text("type").notNull().default("manual"), // "manual" | "scheduled" | "pre-delete"
+  createdAt: text("created_at").notNull().default(""),
+});

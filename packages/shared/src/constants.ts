@@ -131,6 +131,44 @@ export const VOSS_TRAEFIK_DYNAMIC_DIR = "/etc/traefik/dynamic";
 export const VOSS_DB_PATH = "/var/voss/data/voss.db";
 export const VOSS_BACKUP_DIR = "/var/voss/backups";
 
+// ── Database services ──
+
+export const DB_IMAGES: Record<string, Record<string, string>> = {
+  postgres: { "16": "postgres:16-alpine", "15": "postgres:15-alpine", "14": "postgres:14-alpine" },
+  redis: { "7": "redis:7-alpine", "6": "redis:6-alpine" },
+};
+
+export const DB_DEFAULT_VERSIONS: Record<string, string> = {
+  postgres: "16",
+  redis: "7",
+};
+
+export const DB_DEFAULT_PORTS: Record<string, number> = {
+  postgres: 5432,
+  redis: 6379,
+};
+
+export const DB_ENV_KEYS: Record<string, string> = {
+  postgres: "DATABASE_URL",
+  redis: "REDIS_URL",
+};
+
+export const SHARED_CONTAINERS: Record<string, string> = {
+  postgres: "voss-shared-postgres",
+  redis: "voss-shared-redis",
+};
+
+export const VOSS_VOLUMES_DIR = "/var/voss/volumes";
+export const VOSS_DB_BACKUP_DIR = "/var/voss/backups/db";
+
+export const PROVIDER_URL_PATTERNS: Record<string, RegExp> = {
+  neon: /^postgres(ql)?:\/\/.*\.neon\.(tech|db)\//,
+  supabase: /^postgres(ql)?:\/\/.*\.supabase\.(co|com)(:\d+)?\//,
+  planetscale: /^mysql:\/\/.*\.psdb\.cloud\//,
+  upstash: /^rediss?:\/\/.*\.upstash\.io/,
+  turso: /^libsql:\/\/.*\.turso\.io/,
+};
+
 // ── CLI ──
 
 export const CLI_CONFIG_DIR = ".voss";

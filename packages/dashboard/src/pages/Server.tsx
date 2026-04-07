@@ -18,16 +18,27 @@ interface Stats {
   };
 }
 
+interface DbStatus {
+  shared: {
+    postgres: { running: boolean; exists: boolean };
+    redis: { running: boolean; exists: boolean };
+  };
+  totalServices: number;
+}
+
 export function Server() {
   const [health, setHealth] = useState<any>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [initializing, setInitializing] = useState(false);
 
   useEffect(() => {
     Promise.all([
       api("/api/health").then(setHealth),
       api<Stats>("/api/stats").then(setStats),
+      api<DbStatus>("/api/db/status").then(setDbStatus).catch(() => {}),
     ])
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -82,6 +93,52 @@ export function Server() {
           </>
         )}
       </div>
+
+      {dbStatus && (
+        <>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: "32px 0 16px" }}>Database Infrastructure</h2>
+          <div className="kv">
+            <span className="kv-key">Shared Postgres</span>
+            <span className="kv-val">
+              {dbStatus.shared.postgres.running
+                ? <><span className="dot dot-live" /> running</>
+                : dbStatus.shared.postgres.exists
+                  ? <><span className="dot dot-pending" /> stopped</>
+                  : <span style={{ color: "var(--muted)" }}>not initialized</span>
+              }
+            </span>
+            <span className="kv-key">Shared Redis</span>
+            <span className="kv-val">
+              {dbStatus.shared.redis.running
+                ? <><span className="dot dot-live" /> running</>
+                : dbStatus.shared.redis.exists
+                  ? <><span className="dot dot-pending" /> stopped</>
+                  : <span style={{ color: "var(--muted)" }}>not initialized</span>
+              }
+            </span>
+            <span className="kv-key">Total Services</span>
+            <span className="kv-val mono">{dbStatus.totalServices}</span>
+          </div>
+          {!dbStatus.shared.postgres.exists && !dbStatus.shared.redis.exists && (
+            <button
+              className="btn btn-primary btn-sm"
+              style={{ marginTop: 12 }}
+              disabled={initializing}
+              onClick={async () => {
+                setInitializing(true);
+                try {
+                  await api("/api/db/init", { method: "POST" });
+                  const updated = await api<DbStatus>("/api/db/status");
+                  setDbStatus(updated);
+                } catch {}
+                setInitializing(false);
+              }}
+            >
+              {initializing ? "Initializing..." : "Initialize shared databases"}
+            </button>
+          )}
+        </>
+      )}
 
       {stats && stats.containers.length > 0 && (
         <>

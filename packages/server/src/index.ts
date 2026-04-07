@@ -8,6 +8,7 @@ import { domainRoutes } from "./routes/domains";
 import { webhookRoutes } from "./routes/webhook";
 import { healthRoutes } from "./routes/health";
 import { eventRoutes } from "./routes/events";
+import { dbRoutes } from "./routes/db";
 import { wsRoutes } from "./routes/ws";
 import { checkDependencies } from "./services/startup";
 import { reconcileTraefikConfigs, writeDefaultMiddlewares } from "./services/traefik";
@@ -117,6 +118,7 @@ const app = new Elysia({
     if (!path.startsWith("/api/")) return;
     if (path === "/api/health") return;
     if (path === "/api/stats") return;
+    if (path === "/api/db/status") return;
     if (path.startsWith("/api/webhook/")) return;
     const token = headers.authorization?.replace("Bearer ", "");
     if (token !== API_KEY) {
@@ -131,6 +133,7 @@ const app = new Elysia({
   .use(envRoutes)
   .use(domainRoutes)
   .use(eventRoutes)
+  .use(dbRoutes)
   // Dashboard: serve static files from packages/dashboard/dist
   .get("/assets/*", ({ params }) => {
     const fileName = (params as any)["*"];

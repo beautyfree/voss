@@ -1,5 +1,5 @@
 import { DETECTION_ORDER, RUNNERS } from "./constants";
-import type { FrameworkId, VossConfig } from "./types";
+import type { FrameworkId, ServiceConfig, ServiceType, VossConfig } from "./types";
 
 /**
  * Parse and validate voss.json config.
@@ -109,6 +109,49 @@ export function parseConfig(raw: unknown): VossConfig {
         throw new ConfigError("INVALID_CONFIG", "'healthCheck.timeout' must be a positive number (seconds)");
       }
       config.healthCheck.timeout = hc.timeout;
+    }
+  }
+
+  if (obj.services !== undefined) {
+    if (typeof obj.services !== "object" || obj.services === null) {
+      throw new ConfigError("INVALID_CONFIG", "'services' must be an object");
+    }
+    const svc = obj.services as Record<string, unknown>;
+    config.services = {};
+    const validTypes: ServiceType[] = ["postgres", "redis"];
+    for (const [key, val] of Object.entries(svc)) {
+      if (!validTypes.includes(key as ServiceType)) {
+        throw new ConfigError("INVALID_CONFIG", `Unknown service type '${key}'. Valid: ${validTypes.join(", ")}`);
+      }
+      if (val === true) {
+        (config.services as Record<string, ServiceConfig | boolean>)[key] = true;
+      } else if (typeof val === "object" && val !== null) {
+        const svcCfg = val as Record<string, unknown>;
+        const parsed: ServiceConfig = {};
+        if (svcCfg.version !== undefined) {
+          if (typeof svcCfg.version !== "string") throw new ConfigError("INVALID_CONFIG", `'services.${key}.version' must be a string`);
+          parsed.version = svcCfg.version;
+        }
+        if (svcCfg.tier !== undefined) {
+          if (svcCfg.tier !== "shared" && svcCfg.tier !== "isolated") {
+            throw new ConfigError("INVALID_CONFIG", `'services.${key}.tier' must be 'shared' or 'isolated'`);
+          }
+          parsed.tier = svcCfg.tier;
+        }
+        if (svcCfg.memory !== undefined) {
+          if (typeof svcCfg.memory !== "string") throw new ConfigError("INVALID_CONFIG", `'services.${key}.memory' must be a string`);
+          parsed.memory = svcCfg.memory;
+        }
+        if (svcCfg.maxConnections !== undefined) {
+          if (typeof svcCfg.maxConnections !== "number" || svcCfg.maxConnections <= 0) {
+            throw new ConfigError("INVALID_CONFIG", `'services.${key}.maxConnections' must be a positive number`);
+          }
+          parsed.maxConnections = svcCfg.maxConnections;
+        }
+        (config.services as Record<string, ServiceConfig | boolean>)[key] = parsed;
+      } else {
+        throw new ConfigError("INVALID_CONFIG", `'services.${key}' must be true or a config object`);
+      }
     }
   }
 

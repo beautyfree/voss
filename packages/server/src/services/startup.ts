@@ -2,6 +2,7 @@ import { $ } from "bun";
 import { DOCKER_NETWORK_RUNNER, DOCKER_NETWORK_INTERNAL } from "@voss/shared";
 import { getDb, schema } from "../db";
 import { eq } from "drizzle-orm";
+import { reconcileServiceStatus } from "./db-manager";
 
 /**
  * Verify that all required dependencies are running before starting the server.
@@ -81,6 +82,14 @@ export async function checkDependencies() {
     }
   } catch (e) {
     console.error("  ⚠ Could not check stale builds:", (e as Error).message);
+  }
+
+  // Reconcile database service container status
+  try {
+    await reconcileServiceStatus();
+    console.log("  ✓ Database services reconciled");
+  } catch (e) {
+    console.error("  ⚠ Database service reconciliation failed:", (e as Error).message);
   }
 
   console.log("All checks passed.\n");

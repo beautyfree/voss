@@ -85,6 +85,35 @@ function migrate(sqlite: Database) {
     );
   `);
 
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS services (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id),
+      type TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      provider TEXT,
+      version TEXT,
+      container_name TEXT,
+      container_status TEXT NOT NULL DEFAULT 'stopped',
+      db_name TEXT,
+      env_key TEXT,
+      volume_path TEXT,
+      port INTEGER,
+      config TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS service_backups (
+      id TEXT PRIMARY KEY,
+      service_id TEXT NOT NULL REFERENCES services(id),
+      file_path TEXT NOT NULL,
+      size_bytes INTEGER,
+      type TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT NOT NULL DEFAULT ''
+    );
+  `);
+
   // Migrations for existing DBs
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN repo_url TEXT"); } catch {}
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN cache_hash TEXT"); } catch {}

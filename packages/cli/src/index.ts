@@ -15,6 +15,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   init: () => import("./commands/init").then((m) => m.default(args.slice(1))),
   domains: () => import("./commands/domains").then((m) => m.default(args.slice(1))),
   link: () => import("./commands/link").then((m) => m.default(args.slice(1))),
+  db: () => import("./commands/db").then((m) => m.default(args.slice(1))),
 };
 
 if (!command || command === "--help" || command === "-h") {
@@ -36,6 +37,12 @@ if (!command || command === "--help" || command === "-h") {
     voss domains remove <hostname>     Remove custom domain
     voss domains                       List domains
     voss link [repo-url]               Link GitHub repo for auto-deploy
+    voss db init                       Start shared Postgres + Redis
+    voss db create [--isolated] [--redis]  Create database for project
+    voss db connect <provider> --url   Connect external database
+    voss db list                       List databases
+    voss db backup                     Backup databases
+    voss db destroy                    Delete databases
 
   Options:
     --help, -h                         Show this help
