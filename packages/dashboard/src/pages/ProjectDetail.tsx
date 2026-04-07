@@ -82,6 +82,10 @@ export function ProjectDetail() {
   const [newDomain, setNewDomain] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
 
+  const [svcType, setSvcType] = useState<"postgres" | "redis">("postgres");
+  const [svcTier, setSvcTier] = useState<"shared" | "isolated">("shared");
+  const [svcSaving, setSvcSaving] = useState(false);
+
   const [editingRepo, setEditingRepo] = useState(false);
   const [repoInput, setRepoInput] = useState("");
 
@@ -290,10 +294,6 @@ export function ProjectDetail() {
       </div>
     );
   }
-
-  const [svcType, setSvcType] = useState<"postgres" | "redis">("postgres");
-  const [svcTier, setSvcTier] = useState<"shared" | "isolated">("shared");
-  const [svcSaving, setSvcSaving] = useState(false);
 
   async function addService() {
     if (!name || svcSaving) return;
