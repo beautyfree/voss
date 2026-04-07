@@ -4,13 +4,82 @@ import { getDb, schema } from "../db";
 import { stopContainer } from "../services/runner";
 import { removeTraefikConfig } from "../services/traefik";
 import { deleteProjectServices } from "../services/db-manager";
-import { VOSS_LOG_DIR, VOSS_UPLOADS_DIR, VOSS_DATA_DIR } from "@voss/shared";
+import { ensureServicesForProject } from "../services/db-manager";
+import { VOSS_LOG_DIR, VOSS_UPLOADS_DIR, VOSS_DATA_DIR, PROJECT_TEMPLATES, validateProjectName } from "@voss/shared";
 import { $ } from "bun";
 
 export const projectRoutes = new Elysia({ prefix: "/api/projects" })
   .get("/", () => {
     const db = getDb();
     return { data: db.select().from(schema.projects).all() };
+  })
+  .get("/templates", () => {
+    return { data: PROJECT_TEMPLATES };
+  })
+  .post("/from-template", async ({ body }) => {
+    const { name, templateId } = body;
+
+    const nameErr = validateProjectName(name);
+    if (nameErr) {
+      return new Response(
+        JSON.stringify({ code: "INVALID_CONFIG", message: nameErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const template = PROJECT_TEMPLATES.find(t => t.id === templateId);
+    if (!template) {
+      return new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: `Template '${templateId}' not found` }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const db = getDb();
+
+    // Check if project already exists
+    const existing = db.select().from(schema.projects)
+      .where(eq(schema.projects.name, name)).get();
+    if (existing) {
+      return new Response(
+        JSON.stringify({ code: "INVALID_CONFIG", message: `Project '${name}' already exists` }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const projectId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.insert(schema.projects).values({
+      id: projectId, name, framework: template.framework,
+      createdAt: now, updatedAt: now,
+    }).run();
+
+    // Provision services if template has them
+    let provisionedServices: string[] = [];
+    if (template.services) {
+      try {
+        const config = { name, framework: template.framework, services: template.services };
+        const envVars = await ensureServicesForProject(name, projectId, config as any);
+        provisionedServices = Object.keys(envVars);
+      } catch (e) {
+        console.error(`[template] Service provisioning failed for ${name}:`, (e as Error).message);
+      }
+    }
+
+    return {
+      data: {
+        id: projectId,
+        name,
+        framework: template.framework,
+        template: template.id,
+        services: provisionedServices,
+      },
+    };
+  }, {
+    body: t.Object({
+      name: t.String(),
+      templateId: t.String(),
+    }),
   })
   .get("/:name", ({ params }) => {
     const db = getDb();

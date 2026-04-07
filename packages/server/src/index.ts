@@ -14,6 +14,7 @@ import { checkDependencies } from "./services/startup";
 import { reconcileTraefikConfigs, writeDefaultMiddlewares } from "./services/traefik";
 import { startSslChecker } from "./services/ssl-check";
 import { startLogCleanup } from "./services/log-cleanup";
+import { startMetricsCollector } from "./services/metrics-collector";
 import { existsSync } from "fs";
 import { join } from "path";
 
@@ -174,7 +175,8 @@ console.log(`voss-server running on :${PORT}`);
 console.log(`Dashboard: http://localhost:${PORT}`);
 
 // Background jobs
-startSslChecker();   // SSL cert check every hour
-startLogCleanup();   // Log + container cleanup every 6 hours
+startSslChecker();       // SSL cert check every hour
+startLogCleanup();       // Log + container cleanup every 6 hours
+startMetricsCollector(); // Docker stats every 30s
 
 export type App = typeof app;

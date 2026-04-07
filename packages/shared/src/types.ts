@@ -127,6 +127,17 @@ export interface Service {
   updatedAt: string;
 }
 
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  framework: FrameworkId;
+  services?: {
+    postgres?: boolean;
+    redis?: boolean;
+  };
+}
+
 export interface ServiceBackup {
   id: string;
   serviceId: string;

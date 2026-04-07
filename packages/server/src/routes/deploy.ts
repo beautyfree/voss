@@ -23,6 +23,7 @@ import { logEvent } from "../services/events";
 import { notifyDeploy } from "../services/notify";
 import { postPreviewComment } from "../services/github";
 import { ensureServicesForProject } from "../services/db-manager";
+import { resolveEnvVars } from "../services/env-resolver";
 
 // ── WebSocket log subscribers ──
 const logSubscribers = new Map<string, Set<(msg: string) => void>>();
@@ -449,6 +450,10 @@ export async function deployInBackground(
         return;
       }
     }
+
+    // Resolve reference variables (${{postgres.url}}, ${{project.name}}, etc.)
+    const resolvedEnvVars = resolveEnvVars(projectId, envVars);
+    Object.assign(envVars, resolvedEnvVars);
 
     // Wait for build slot
     await acquireBuildSlot();

@@ -114,6 +114,19 @@ function migrate(sqlite: Database) {
     );
   `);
 
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS metrics (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      container_name TEXT NOT NULL,
+      cpu REAL NOT NULL,
+      memory_mb REAL NOT NULL,
+      network_rx_kb REAL NOT NULL,
+      network_tx_kb REAL NOT NULL,
+      timestamp TEXT NOT NULL
+    );
+  `);
+
   // Migrations for existing DBs
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN repo_url TEXT"); } catch {}
   try { sqlite.exec("ALTER TABLE projects ADD COLUMN cache_hash TEXT"); } catch {}

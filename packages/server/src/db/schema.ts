@@ -82,6 +82,17 @@ export const services = sqliteTable("services", {
   updatedAt: text("updated_at").notNull().default(""),
 });
 
+export const metrics = sqliteTable("metrics", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id),
+  containerName: text("container_name").notNull(),
+  cpu: real("cpu").notNull(), // percentage
+  memoryMb: real("memory_mb").notNull(),
+  networkRxKb: real("network_rx_kb").notNull(),
+  networkTxKb: real("network_tx_kb").notNull(),
+  timestamp: text("timestamp").notNull(),
+});
+
 export const serviceBackups = sqliteTable("service_backups", {
   id: text("id").primaryKey(),
   serviceId: text("service_id").notNull().references(() => services.id),

@@ -169,6 +169,20 @@ export const PROVIDER_URL_PATTERNS: Record<string, RegExp> = {
   turso: /^libsql:\/\/.*\.turso\.io/,
 };
 
+// ── Project Templates ──
+
+import type { ProjectTemplate } from "./types";
+
+export const PROJECT_TEMPLATES: ProjectTemplate[] = [
+  { id: "nextjs-postgres", name: "Next.js + Postgres", description: "Full-stack Next.js with PostgreSQL database", framework: "nextjs", services: { postgres: true } },
+  { id: "nextjs-full", name: "Next.js + Postgres + Redis", description: "Next.js with PostgreSQL and Redis cache", framework: "nextjs", services: { postgres: true, redis: true } },
+  { id: "vite-postgres", name: "Vite + Postgres", description: "Vite frontend with PostgreSQL backend", framework: "vite", services: { postgres: true } },
+  { id: "bun-api", name: "Bun API + Postgres", description: "Bun backend API with PostgreSQL", framework: "bun", services: { postgres: true } },
+  { id: "astro-postgres", name: "Astro + Postgres", description: "Astro site with PostgreSQL", framework: "astro", services: { postgres: true } },
+  { id: "static", name: "Static Site", description: "Static HTML/CSS/JS site", framework: "static" },
+  { id: "dockerfile", name: "Dockerfile", description: "Custom Dockerfile build", framework: "dockerfile" },
+];
+
 // ── CLI ──
 
 export const CLI_CONFIG_DIR = ".voss";

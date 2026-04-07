@@ -20,6 +20,7 @@ import {
   backupService,
   restoreService,
   getSharedStatus,
+  getExternalConnectionInfo,
 } from "../services/db-manager";
 import { inspectContainer } from "../services/docker-utils";
 
@@ -72,7 +73,12 @@ export const dbRoutes = new Elysia({ prefix: "/api" })
     const services = db.select().from(schema.services)
       .where(eq(schema.services.projectId, project.id)).all();
 
-    return { data: services };
+    const enriched = services.map(s => ({
+      ...s,
+      externalAccess: getExternalConnectionInfo(s),
+    }));
+
+    return { data: enriched };
   })
 
   .post("/projects/:name/services", async ({ params, body }) => {
@@ -252,7 +258,8 @@ export const dbRoutes = new Elysia({ prefix: "/api" })
       containerStatus = !exists ? "stopped" : running ? "running" : "stopped";
     }
 
-    return { data: { ...service, containerStatus } };
+    const externalAccess = getExternalConnectionInfo(service);
+    return { data: { ...service, containerStatus, externalAccess } };
   })
 
   // Create backup

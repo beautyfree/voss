@@ -74,6 +74,8 @@ export async function initSharedPostgres(): Promise<void> {
   await ensureImage(image);
   await $`mkdir -p ${VOSS_VOLUMES_DIR}`;
 
+  const hostPort = allocateHostPort();
+
   await createContainer({
     name,
     image,
@@ -83,6 +85,7 @@ export async function initSharedPostgres(): Promise<void> {
       POSTGRES_USER: "voss_admin",
     },
     volumes: [`${volumeName}:/var/lib/postgresql/data`],
+    portMappings: [`${hostPort}:5432`],
     labels: { "voss.service": "shared-postgres" },
     memory: "512m",
     cpu: 0.5,
@@ -119,6 +122,7 @@ export async function initSharedRedis(): Promise<void> {
   const version = DB_DEFAULT_VERSIONS.redis;
   const image = DB_IMAGES.redis[version];
   const volumeName = "voss-vol-shared-redis";
+  const hostPort = allocateHostPort();
 
   await ensureImage(image);
 
@@ -127,6 +131,7 @@ export async function initSharedRedis(): Promise<void> {
     image,
     network: DOCKER_NETWORK_INTERNAL,
     volumes: [`${volumeName}:/data`],
+    portMappings: [`${hostPort}:6379`],
     labels: { "voss.service": "shared-redis" },
     memory: "256m",
     cpu: 0.25,
@@ -313,6 +318,7 @@ export async function createIsolatedService(
 
   await ensureImage(image);
 
+  const hostPort = allocateHostPort();
   let connectionUrl: string;
   const containerEnv: Record<string, string> = {};
 
@@ -333,6 +339,7 @@ export async function createIsolatedService(
     network: DOCKER_NETWORK_INTERNAL,
     envVars: containerEnv,
     volumes: [`${volumeName}:/var/lib/${type === "postgres" ? "postgresql/data" : "redis"}`],
+    portMappings: [`${hostPort}:${port}`],
     labels: {
       "voss.service": type,
       "voss.project": projectName,
@@ -366,7 +373,7 @@ export async function createIsolatedService(
       containerStatus: "running",
       envKey,
       volumePath: volumeName,
-      port,
+      port: hostPort,
       config: JSON.stringify(config),
       createdAt: now,
       updatedAt: now,
@@ -774,6 +781,53 @@ export async function getSharedStatus(): Promise<{
 }
 
 // ── Helpers ──
+
+const HOST_PORT_MIN = 10000;
+const HOST_PORT_MAX = 10999;
+
+/**
+ * Allocate an available host port for external DB access.
+ */
+function allocateHostPort(): number {
+  const db = getDb();
+  const usedPorts = new Set(
+    db.select().from(schema.services).all()
+      .map(s => s.port)
+      .filter((p): p is number => p !== null && p >= HOST_PORT_MIN && p <= HOST_PORT_MAX)
+  );
+  for (let port = HOST_PORT_MIN; port <= HOST_PORT_MAX; port++) {
+    if (!usedPorts.has(port)) return port;
+  }
+  throw new Error("No available host ports for database proxy (10000-10999 exhausted)");
+}
+
+/**
+ * Get external connection info for a service.
+ */
+export function getExternalConnectionInfo(service: any): {
+  host: string;
+  port: number;
+  connectionUrl: string;
+} | null {
+  if (!service.port || service.port < HOST_PORT_MIN) return null;
+  const domain = process.env.VOSS_DOMAIN ?? "localhost";
+  const host = /^\d+\.\d+\.\d+\.\d+$/.test(domain) ? domain : domain;
+
+  if (service.type === "postgres") {
+    return {
+      host,
+      port: service.port,
+      connectionUrl: `postgresql://app:***@${host}:${service.port}/app`,
+    };
+  } else if (service.type === "redis") {
+    return {
+      host,
+      port: service.port,
+      connectionUrl: `redis://${host}:${service.port}/0`,
+    };
+  }
+  return null;
+}
 
 function generatePassword(): string {
   const bytes = new Uint8Array(24);

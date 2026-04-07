@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
 import { StatusBadge } from "../components/StatusDot";
 import { toast } from "../components/Toast";
+import { Sparkline } from "../components/Sparkline";
+import { ServiceCanvas } from "../components/ServiceCanvas";
 
 interface Deployment {
   id: string;
@@ -54,6 +56,7 @@ interface ServiceData {
   dbName: string | null;
   envKey: string | null;
   createdAt: string;
+  externalAccess: { host: string; port: number; connectionUrl: string } | null;
 }
 
 interface LogMessage {
@@ -86,6 +89,9 @@ export function ProjectDetail() {
   const [svcTier, setSvcTier] = useState<"shared" | "isolated">("shared");
   const [svcSaving, setSvcSaving] = useState(false);
 
+  const [metricsData, setMetricsData] = useState<any[]>([]);
+  const [metricsPeriod, setMetricsPeriod] = useState("1h");
+
   const [editingRepo, setEditingRepo] = useState(false);
   const [repoInput, setRepoInput] = useState("");
 
@@ -107,14 +113,16 @@ export function ProjectDetail() {
       api<EnvVar[]>(`/api/projects/${name}/env/`),
       api<Event[]>(`/api/projects/${name}/events/`),
       api<ServiceData[]>(`/api/projects/${name}/services`),
+      api<any[]>(`/api/projects/${name}/metrics?period=1h`).catch(() => []),
     ])
-      .then(([p, d, dm, ev, act, svc]) => {
+      .then(([p, d, dm, ev, act, svc, met]) => {
         setProject(p);
         setDeploys(d);
         setDomains(dm);
         setEnvVars(ev);
         setEvents(act);
         setServices(svc);
+        setMetricsData(met);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -357,6 +365,15 @@ export function ProjectDetail() {
       </div>
 
       {tab === "overview" && (
+        <div>
+        {services.length > 0 && (
+          <ServiceCanvas
+            projectName={project.name}
+            framework={project.framework}
+            services={services}
+            deployStatus={project.latestDeployment?.status}
+          />
+        )}
         <div className="kv">
           <span className="kv-key">Framework</span>
           <span className="kv-val">{project.framework}</span>
@@ -396,6 +413,30 @@ export function ProjectDetail() {
               <span className="kv-val mono">{project.latestDeployment.runnerImage}</span>
             </>
           )}
+        </div>
+        {metricsData.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Metrics</h3>
+              {["1h", "6h", "24h"].map((p) => (
+                <button key={p} className={`btn btn-ghost btn-sm ${metricsPeriod === p ? "" : ""}`}
+                  style={{ fontSize: 11, opacity: metricsPeriod === p ? 1 : 0.5 }}
+                  onClick={() => {
+                    setMetricsPeriod(p);
+                    api<any[]>(`/api/projects/${name}/metrics?period=${p}`).then(setMetricsData).catch(() => {});
+                  }}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              <Sparkline data={metricsData.map(m => m.cpu)} label="CPU" unit="%" color="#0cce6b" />
+              <Sparkline data={metricsData.map(m => m.memoryMb)} label="Memory" unit="MB" color="#0070f3" />
+              <Sparkline data={metricsData.map(m => m.networkRxKb)} label="Net RX" unit="KB" color="#f5a623" />
+              <Sparkline data={metricsData.map(m => m.networkTxKb)} label="Net TX" unit="KB" color="#ee5253" />
+            </div>
+          </div>
+        )}
         </div>
       )}
 
@@ -501,6 +542,14 @@ export function ProjectDetail() {
                 </span>
                 {s.version && <span className="row-meta">v{s.version}</span>}
                 {s.envKey && <span className="row-meta mono" style={{ fontSize: 11 }}>{s.envKey}</span>}
+                {s.externalAccess && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => {
+                    navigator.clipboard.writeText(s.externalAccess!.connectionUrl);
+                    toast("Connection URL copied", "info");
+                  }} title={s.externalAccess.connectionUrl}>
+                    :{s.externalAccess.port} Copy
+                  </button>
+                )}
                 <span style={{ flex: 1 }} />
                 {s.tier !== "external" && (
                   <button className="btn btn-ghost btn-sm" onClick={() => backupServiceById(s.id)}>Backup</button>

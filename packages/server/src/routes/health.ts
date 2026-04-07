@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import { $ } from "bun";
+import { eq, desc } from "drizzle-orm";
+import { getDb, schema } from "../db";
 
 export const healthRoutes = new Elysia({ prefix: "/api" })
   .get("/health", () => ({
@@ -43,4 +45,33 @@ export const healthRoutes = new Elysia({ prefix: "/api" })
     } catch {
       return { data: { containers: [], system: {} } };
     }
+  })
+  .get("/projects/:name/metrics", ({ params, query }) => {
+    const db = getDb();
+    const project = db.select().from(schema.projects)
+      .where(eq(schema.projects.name, params.name)).get();
+    if (!project) {
+      return new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: "Project not found" }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Period: 1h, 6h, 24h (default 1h)
+    const period = (query as any)?.period ?? "1h";
+    const hours = period === "24h" ? 24 : period === "6h" ? 6 : 1;
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    const allMetrics = db.select().from(schema.metrics)
+      .where(eq(schema.metrics.projectId, project.id))
+      .orderBy(desc(schema.metrics.timestamp))
+      .all()
+      .filter(m => m.timestamp >= cutoff);
+
+    // Downsample to ~60 points for the chart
+    const maxPoints = 60;
+    const step = Math.max(1, Math.floor(allMetrics.length / maxPoints));
+    const sampled = allMetrics.filter((_, i) => i % step === 0).reverse();
+
+    return { data: sampled };
   });

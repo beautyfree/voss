@@ -6,6 +6,7 @@ export interface CreateContainerOpts {
   network: string;
   envVars?: Record<string, string>;
   volumes?: string[]; // "host:container" or named "vol:/path"
+  portMappings?: string[]; // "HOST_PORT:CONTAINER_PORT"
   labels?: Record<string, string>;
   memory?: string;
   cpu?: number;
@@ -33,6 +34,11 @@ export async function createContainer(opts: CreateContainerOpts): Promise<string
   if (opts.volumes) {
     for (const v of opts.volumes) {
       args.push("-v", v);
+    }
+  }
+  if (opts.portMappings) {
+    for (const p of opts.portMappings) {
+      args.push("-p", p);
     }
   }
   if (opts.envVars) {
